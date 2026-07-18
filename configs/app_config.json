@@ -1,0 +1,48 @@
+{
+  "product_name": "AMRShield Sentinel",
+  "supported_species": "Escherichia coli",
+  "model_version": "demo-marker-baseline-v0.1",
+  "supported_extensions": [".fa", ".fasta", ".fna"],
+  "max_file_size_mb": 20,
+  "max_contigs": 500,
+  "quality": {
+    "min_total_bases": 100,
+    "max_total_bases": 7000000,
+    "max_ambiguous_fraction": 0.08
+  },
+  "antibiotics": [
+    {
+      "name": "Ciprofloxacin",
+      "target": "DNA gyrase / topoisomerase IV",
+      "known_markers": ["gyrA_S83L", "parC_S80I", "qnrS1"],
+      "fail_threshold": 0.72,
+      "work_threshold": 0.28
+    },
+    {
+      "name": "Ampicillin",
+      "target": "Penicillin-binding proteins",
+      "known_markers": ["blaTEM-1", "blaSHV-1"],
+      "fail_threshold": 0.70,
+      "work_threshold": 0.30
+    },
+    {
+      "name": "Tetracycline",
+      "target": "30S ribosomal subunit",
+      "known_markers": ["tetA", "tetB"],
+      "fail_threshold": 0.70,
+      "work_threshold": 0.30
+    },
+    {
+      "name": "Ceftriaxone",
+      "target": "Penicillin-binding proteins",
+      "known_markers": ["blaCTX-M-15", "blaCMY-2"],
+      "fail_threshold": 0.74,
+      "work_threshold": 0.26
+    }
+  ],
+  "safety": {
+    "low_confidence_cutoff": 0.60,
+    "ood_marker_cutoff": 0.20,
+    "lab_confirmation_message": "Research prototype only. Confirm every result with standard laboratory susceptibility testing."
+  }
+}

@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AMRShield Sentinel</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="scanline"></div>
+    <div class="shell">
+      <aside class="side-rail">
+        <div class="brand-mark">Start</div>
+        <button class="nav-button active" data-nav="upload" title="Upload">Upload</button>
+        <button class="nav-button" data-nav="results" title="Results">Results</button>
+        <button class="nav-button" data-nav="trust" title="Trust">Trust</button>
+        <button class="nav-button" data-nav="safety" title="Safety">Safety</button>
+      </aside>
+
+      <main class="console">
+        <div class="app-titlebar">
+          <div class="title-left">
+            <span class="app-icon">AS</span>
+            <span>AMRShield Sentinel - Genome Firewall</span>
+          </div>
+          <div class="window-controls" aria-hidden="true">
+            <span>_</span><span>□</span><span>×</span>
+          </div>
+        </div>
+        <section class="hero-grid active" data-panel="upload">
+          <div class="hero-copy">
+            <p class="kicker">DEFENSIVE AI / GENOME FIREWALL / RESEARCH PROTOTYPE</p>
+            <h1>AMRShield Sentinel</h1>
+            <p class="lede">Upload a reconstructed bacterial genome and inspect antibiotic response predictions with calibrated confidence, evidence, and explicit no-call.</p>
+            <div class="notice" id="confirmation"></div>
+          </div>
+          <div class="hero-visual" aria-hidden="true">
+            <div class="terminal-art">
+              <div class="terminal-top">
+                <span>Genome Console</span>
+              </div>
+              <pre>
+AMRSHIELD SENTINEL // GENOME FIREWALL
+-------------------------------------
+> FASTA_INPUT       READY
+> AMR_MARKERS       STANDBY
+> TARGET_GATE       ARMED
+> NO_CALL_POLICY    ACTIVE
+
+ACGT ACGT TTA CCGT AACT
+GCTA TTAC GYRA_S83L ----
+TETA ---- BLATEM-1 ----
+
+[ DEFENSIVE MODE ONLY ]
+              </pre>
+            </div>
+            <div class="crt-readout">
+              <span>SEQ BUS</span>
+              <strong>ONLINE</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="workbench active" data-panel="upload">
+          <div class="panel upload-panel">
+            <div class="panel-header">
+              <h2>Genome Intake</h2>
+              <span id="runStatus">Awaiting FASTA input</span>
+            </div>
+            <label class="field-label" for="species">Species Scope</label>
+            <select id="species"></select>
+            <label class="drop-zone" for="fastaFile">
+              <input id="fastaFile" type="file" accept=".fa,.fasta,.fna">
+              <span>Drop or select FASTA</span>
+              <small id="fileStatus">No file loaded</small>
+            </label>
+            <label class="field-label" for="sequencePreview">Manual / demo sequence buffer</label>
+            <textarea id="sequencePreview" spellcheck="false" placeholder=">sample&#10;ACGTACGT..."></textarea>
+            <div class="sample-row">
+              <button data-sample="likely_fail_sample.fasta">Fail sample</button>
+              <button data-sample="likely_work_sample.fasta">Work sample</button>
+              <button data-sample="no_call_sample.fasta">No-call sample</button>
+            </div>
+            <button id="analyseButton" class="primary-action">Analyze Genome</button>
+          </div>
+
+          <div class="panel scope-panel">
+            <div class="panel-header">
+              <h2>Configured Scope</h2>
+              <span id="modelVersion"></span>
+            </div>
+            <div class="scope-line">
+              <span>Species</span>
+              <strong id="speciesScope"></strong>
+            </div>
+            <ul class="drug-list" id="drugList"></ul>
+          </div>
+        </section>
+
+        <section class="workbench" data-panel="results">
+          <div class="stat-grid">
+            <div><span>Run</span><strong id="runId">--</strong></div>
+            <div><span>QC</span><strong id="qcStatus">--</strong></div>
+            <div><span>Markers</span><strong id="markerCount">0</strong></div>
+            <div><span>Fail</span><strong id="failCount">0</strong></div>
+            <div><span>Work</span><strong id="workCount">0</strong></div>
+            <div><span>No-call</span><strong id="noCallCount">0</strong></div>
+          </div>
+          <div class="panel table-panel">
+            <div class="panel-header">
+              <h2>Resistance Firewall Matrix</h2>
+              <div>
+                <button id="downloadJson">JSON</button>
+                <button id="downloadCsv">CSV</button>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Antibiotic</th>
+                  <th>Decision</th>
+                  <th>Confidence</th>
+                  <th>Evidence</th>
+                  <th>Markers</th>
+                  <th>Target</th>
+                </tr>
+              </thead>
+              <tbody id="resultTable"></tbody>
+            </table>
+          </div>
+          <div id="evidenceDeck" class="evidence-deck"></div>
+        </section>
+
+        <section class="workbench" data-panel="trust">
+          <div class="panel">
+            <div class="panel-header">
+              <h2>Trust Dashboard</h2>
+              <span>Grouped split demo metrics</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Drug</th>
+                  <th>Balanced Acc.</th>
+                  <th>Resistant Recall</th>
+                  <th>Susceptible Recall</th>
+                  <th>PR-AUC</th>
+                  <th>Brier</th>
+                  <th>No-call</th>
+                </tr>
+              </thead>
+              <tbody id="metricsTable"></tbody>
+            </table>
+          </div>
+          <div class="panel chart-panel">
+            <div class="panel-header">
+              <h2>Reliability Plot</h2>
+              <span>Confidence vs observed accuracy</span>
+            </div>
+            <svg viewBox="0 0 540 300" role="img" aria-label="Reliability plot">
+              <line x1="50" y1="260" x2="500" y2="260"></line>
+              <line x1="50" y1="260" x2="50" y2="30"></line>
+              <line class="ideal" x1="260" y1="150" x2="470" y2="40"></line>
+              <polyline id="reliabilityPolyline"></polyline>
+            </svg>
+          </div>
+        </section>
+
+        <section class="workbench" data-panel="safety">
+          <div class="panel safety-panel">
+            <div class="panel-header">
+              <h2>Safety Governor</h2>
+              <span>Defensive by construction</span>
+            </div>
+            <ul class="safety-list">
+              <li>Predicts and explains resistance that may already exist.</li>
+              <li>Does not design, edit, optimize, strengthen, or synthesize organisms.</li>
+              <li>Does not prescribe antibiotics or replace standard laboratory testing.</li>
+              <li>Returns no-call for weak, conflicting, unsupported, or low-quality evidence.</li>
+              <li>Separates known biological markers from statistical associations.</li>
+            </ul>
+            <pre>POST /api/analyse
+{
+  "species": "Escherichia coli",
+  "fileName": "sample.fasta",
+  "content": "&gt;sample..."
+}</pre>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/assets/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "amrshield-sentinel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server/index.js",
+    "dev": "npm run build && node dist/server/index.js",
+    "test": "npm run build && node dist/server/pipeline/selfTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "typescript": "^5.8.2"
+  }
+}
