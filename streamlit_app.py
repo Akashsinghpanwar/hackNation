@@ -141,111 +141,208 @@ def inject_css() -> None:
         """
 <style>
 :root {
-  --bg: #eef1f5;
-  --panel: #ffffff;
-  --line: #d7dde8;
-  --ink: #172033;
-  --muted: #667085;
-  --blue: #2f6db3;
-  --orange: #e8743b;
-  --green: #2e8b57;
-  --red: #c43f3f;
-  --gray: #7b8494;
+  --bg: #0b0f19;
+  --bg2: #0e1524;
+  --panel: #131b2e;
+  --panel2: #172136;
+  --line: #24304a;
+  --ink: #e8eefc;
+  --muted: #93a1bd;
+  --brand: #10a37f;      /* ChatGPT green */
+  --brand2: #0e8f6f;
+  --blue: #4b8fe3;
+  --orange: #f0913f;
+  --green: #29c58b;
+  --red: #f0616b;
+  --gray: #8894ab;
 }
-[data-testid="stAppViewContainer"] { background: var(--bg); }
+[data-testid="stAppViewContainer"] {
+  background:
+    radial-gradient(1200px 600px at 88% -8%, rgba(16,163,127,.16), transparent 60%),
+    radial-gradient(900px 500px at 5% 110%, rgba(75,143,227,.10), transparent 55%),
+    linear-gradient(180deg, var(--bg), var(--bg2));
+  color: var(--ink);
+}
+[data-testid="stHeader"] { background: transparent; }
 [data-testid="stSidebar"] {
-  background: #172033 !important;
-  border-right: 1px solid #0d1320;
+  background: #0c1220 !important;
+  border-right: 1px solid var(--line);
 }
-[data-testid="stSidebar"] * { color: #eef4ff !important; }
-.block-container { padding-top: 1.4rem; max-width: 1540px; }
-h1, h2, h3 { color: var(--ink) !important; letter-spacing: 0; }
-p, label, .stMarkdown { color: var(--ink); }
+[data-testid="stSidebar"] * { color: #cdd8ee !important; }
+.block-container { padding-top: 1.1rem; max-width: 1560px; }
+h1, h2, h3, h4 { color: var(--ink) !important; letter-spacing: .2px; }
+p, label, .stMarkdown, span, li { color: var(--ink); }
+[data-testid="stMetricValue"], [data-testid="stMetricLabel"] { color: var(--ink) !important; }
+
+/* ---------- Top hero bar ---------- */
+.hero {
+  display:flex; align-items:center; justify-content:space-between;
+  gap: 18px; padding: 16px 22px; margin: 2px 0 6px;
+  background: linear-gradient(120deg, rgba(16,163,127,.14), rgba(19,27,46,.9) 40%, rgba(19,27,46,.9));
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 12px 34px rgba(0,0,0,.35);
+  position: relative; overflow: hidden;
+}
+.hero::after {
+  content:""; position:absolute; right:-40px; top:-60px; width:320px; height:320px;
+  background: radial-gradient(circle at center, rgba(16,163,127,.22), transparent 62%);
+  pointer-events:none;
+}
+.hero-left { display:flex; align-items:center; gap:14px; z-index:1; }
+.hero-title { margin:0; font-size:1.5rem; font-weight:800; color:#fff !important; line-height:1.1; }
+.hero-sub { margin:3px 0 0; color:var(--muted) !important; font-size:.86rem; }
+.hero-badges { display:flex; align-items:center; gap:10px; z-index:1; }
+.badge {
+  display:flex; align-items:center; gap:8px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--line);
+  border-radius: 999px; padding: 7px 14px 7px 10px;
+  font-weight:700; font-size:.82rem; color:#dfe8fb;
+}
+.badge small { color: var(--muted); font-weight:600; font-size:.68rem; display:block; line-height:1; }
+.badge b { line-height:1.1; }
+
+/* ---------- Horizontal top navigation (styled st.radio) ---------- */
+div[data-testid="stRadio"] > div[role="radiogroup"] {
+  flex-direction: row; flex-wrap: wrap; gap: 8px; align-items:center;
+}
+div[data-testid="stRadio"] label {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px; padding: 8px 18px; margin: 0 !important;
+  cursor: pointer; transition: all .15s ease;
+}
+div[data-testid="stRadio"] label:hover { border-color: var(--brand); background: var(--panel2); }
+div[data-testid="stRadio"] label > div:first-child { display: none; }   /* hide the radio dot */
+div[data-testid="stRadio"] label div[data-testid="stMarkdownContainer"] p { font-weight:700; font-size:.92rem; }
+div[data-testid="stRadio"] label:has(input:checked) {
+  background: linear-gradient(90deg, var(--brand), var(--brand2));
+  border-color: var(--brand);
+  box-shadow: 0 8px 20px rgba(16,163,127,.35);
+}
+div[data-testid="stRadio"] label:has(input:checked) p { color:#fff !important; }
+
+/* ---------- File uploader ---------- */
 div[data-testid="stFileUploader"] {
-  background: #f8fafc;
-  border: 2px dashed #8ea9cf;
-  border-radius: 8px;
-  padding: 10px;
+  background: var(--panel); border: 1.5px dashed #33507a; border-radius: 12px; padding: 12px;
 }
+div[data-testid="stFileUploader"] * { color: var(--ink) !important; }
 div[data-testid="stFileUploader"] button {
-  background: var(--blue);
-  color: white;
-  border-radius: 6px;
-  border: 1px solid var(--blue);
+  background: var(--brand); color:#fff; border-radius: 8px; border: 1px solid var(--brand);
 }
+[data-testid="stTextInput"] input, [data-testid="stTextArea"] textarea {
+  background: var(--panel2) !important; color: var(--ink) !important; border:1px solid var(--line) !important;
+}
+.stButton > button {
+  background: linear-gradient(90deg, var(--brand), var(--brand2)); color:#fff;
+  border:1px solid var(--brand); border-radius:10px; font-weight:700;
+}
+.stButton > button:hover { filter:brightness(1.08); }
+
+/* ---------- Panels / cards ---------- */
 .banner {
-  background: linear-gradient(90deg, #17385f, #225f8f 55%, #6a7c4f);
-  border: 1px solid #1f4d78;
-  border-radius: 8px;
-  padding: 18px 22px;
-  margin-bottom: 16px;
-  box-shadow: 0 10px 24px rgba(23, 32, 51, .12);
+  background: linear-gradient(120deg, rgba(16,163,127,.16), rgba(19,27,46,.6));
+  border: 1px solid var(--line); border-radius: 14px; padding: 16px 20px; margin-bottom: 14px;
 }
-.banner h1 { margin: 0; color: #ffffff !important; }
-.banner p { color: #dcecff !important; margin: 4px 0 0; }
+.banner h1 { margin: 0; color:#fff !important; font-size:1.25rem; }
+.banner p { color: var(--muted) !important; margin: 5px 0 0; }
 .warning {
-  background: #fff6d9;
-  border: 1px solid #e0bd47;
-  border-radius: 8px;
-  padding: 10px 12px;
-  color: #6c5011;
+  background: rgba(240,145,63,.10); border: 1px solid rgba(240,145,63,.42);
+  border-radius: 12px; padding: 11px 14px; color: #f6c99a;
 }
 .panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 16px;
-  margin: 10px 0;
-  box-shadow: 0 8px 18px rgba(23, 32, 51, .06);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px; margin: 10px 0; box-shadow: 0 10px 26px rgba(0,0,0,.28);
 }
 .kpi {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-top: 4px solid var(--blue);
-  border-radius: 8px;
-  padding: 12px 14px;
-  min-height: 92px;
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  border: 1px solid var(--line); border-top: 3px solid var(--brand);
+  border-radius: 14px; padding: 13px 15px; min-height: 96px;
 }
-.kpi .label { color: var(--muted); font-size: .78rem; text-transform: uppercase; font-weight: 700; }
-.kpi .value { color: var(--ink); font-size: 1.55rem; font-weight: 800; margin-top: 4px; }
-.kpi .sub { color: var(--muted); font-size: .82rem; margin-top: 3px; }
+.kpi .label { color: var(--muted); font-size: .74rem; text-transform: uppercase; font-weight: 800; letter-spacing:.6px; }
+.kpi .value { color: #fff; font-size: 1.7rem; font-weight: 800; margin-top: 4px; }
+.kpi .sub { color: var(--muted); font-size: .8rem; margin-top: 3px; }
 .card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
-  margin: 8px 0;
-  box-shadow: 0 6px 14px rgba(23, 32, 51, .06);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 15px; margin: 8px 0; box-shadow: 0 8px 20px rgba(0,0,0,.28);
 }
+.card h3 { margin: 8px 0 2px; }
 .fail { border-left: 5px solid var(--red); }
 .work { border-left: 5px solid var(--green); }
 .nocall { border-left: 5px solid var(--gray); }
 .pill {
-  display:inline-block;
-  padding: 4px 9px;
-  border-radius: 999px;
-  font-weight: 800;
-  font-size:.72rem;
-  letter-spacing: 0;
+  display:inline-block; padding: 4px 11px; border-radius: 999px;
+  font-weight: 800; font-size:.7rem; letter-spacing: .4px;
 }
-.pill.fail { background:#fff0f0; color:var(--red); border:1px solid #f0b8b8; }
-.pill.work { background:#eaf7ef; color:var(--green); border:1px solid #a9d8ba; }
-.pill.nocall { background:#f0f2f5; color:#5f6673; border:1px solid #c8ced8; }
+.pill.fail { background:rgba(240,97,107,.14); color:var(--red); border:1px solid rgba(240,97,107,.5); }
+.pill.work { background:rgba(41,197,139,.14); color:var(--green); border:1px solid rgba(41,197,139,.5); }
+.pill.nocall { background:rgba(136,148,171,.14); color:#aeb9cf; border:1px solid rgba(136,148,171,.5); }
 .chip {
-  display:inline-block;
-  border:1px solid #b8c8dd;
-  background:#eef5ff;
-  color:#214e7c;
-  border-radius:4px;
-  padding:2px 7px;
-  margin:2px;
-  font-family:monospace;
-  font-size:.78rem;
+  display:inline-block; border:1px solid var(--line); background: var(--panel2);
+  color:#a9c6f0; border-radius:6px; padding:2px 8px; margin:2px;
+  font-family: ui-monospace, monospace; font-size:.78rem;
 }
-.hit { border-color:#f0b8b8; background:#fff0f0; color:var(--red); }
+.hit { border-color:rgba(240,97,107,.5); background:rgba(240,97,107,.12); color:#ff9aa1; }
 .muted { color: var(--muted); font-size:.88rem; }
 hr { border-color: var(--line) !important; }
+[data-testid="stDataFrame"] { border:1px solid var(--line); border-radius:10px; }
+.stTabs [data-baseweb="tab-list"] { gap: 4px; }
 </style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def _logo_shield_svg() -> str:
+    return (
+        '<svg width="40" height="40" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+        '<stop offset="0" stop-color="#19c79a"/><stop offset="1" stop-color="#0e8f6f"/></linearGradient></defs>'
+        '<path d="M24 3 L42 10 V24 C42 35 34 42 24 45 C14 42 6 35 6 24 V10 Z" fill="url(#g)" opacity="0.95"/>'
+        '<path d="M17 15 C31 20 17 28 31 33" stroke="#0b0f19" stroke-width="2.2" fill="none" stroke-linecap="round"/>'
+        '<path d="M31 15 C17 20 31 28 17 33" stroke="#0b0f19" stroke-width="2.2" fill="none" stroke-linecap="round"/>'
+        '<line x1="20" y1="18" x2="28" y2="18" stroke="#0b0f19" stroke-width="1.6"/>'
+        '<line x1="21" y1="24" x2="27" y2="24" stroke="#0b0f19" stroke-width="1.6"/>'
+        '<line x1="20" y1="30" x2="28" y2="30" stroke="#0b0f19" stroke-width="1.6"/>'
+        "</svg>"
+    )
+
+
+def _logo_openai_svg() -> str:
+    return (
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="#10a37f" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M12 2.2c-2.1 0-3.9 1.3-4.6 3.2A4.9 4.9 0 0 0 4.2 13a4.9 4.9 0 0 0 .6 5.7c.9 1.9 3 3 5.1 2.7 '
+        "1 .9 2.3 1.4 3.7 1.4 2.1 0 3.9-1.3 4.6-3.2a4.9 4.9 0 0 0 3.2-4.4c0-1.1-.3-2.1-.9-3a4.9 4.9 0 0 0-.6-5.7"
+        "c-.9-1.9-3-3-5.1-2.7-1-.9-2.3-1.4-3.7-1.4Zm0 1.7c.9 0 1.7.3 2.4.9l-4 2.3a1 1 0 0 0-.5.9v4.7l-1.7-1V7.4"
+        'c0-1.9 1.6-3.5 3.8-3.5Z" opacity="0.95"/></svg>'
+    )
+
+
+def _logo_hacknation_svg() -> str:
+    return (
+        '<svg width="18" height="20" viewBox="0 0 24 26" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        '<path d="M12 1 L22 6.5 V17.5 L12 23 L2 17.5 V6.5 Z" fill="none" stroke="#4b8fe3" stroke-width="1.8"/>'
+        '<path d="M8.5 8 V17 M15.5 8 V17 M8.5 12.5 H15.5" stroke="#4b8fe3" stroke-width="1.8" stroke-linecap="round"/>'
+        "</svg>"
+    )
+
+
+def render_topbar() -> None:
+    st.markdown(
+        f"""
+<div class="hero">
+  <div class="hero-left">
+    {_logo_shield_svg()}
+    <div>
+      <p class="hero-title">AMRShield&nbsp;Sentinel</p>
+      <p class="hero-sub">Genome-based antibiotic-response prediction for <i>E. coli</i> &middot; predict before the lab result</p>
+    </div>
+  </div>
+  <div class="hero-badges">
+    <div class="badge">{_logo_hacknation_svg()}<span><small>Challenge&nbsp;06</small><b>HackNation</b></span></div>
+    <div class="badge">{_logo_openai_svg()}<span><small>Built&nbsp;with</small><b>OpenAI</b></span></div>
+  </div>
+</div>
 """,
         unsafe_allow_html=True,
     )
@@ -1157,15 +1254,6 @@ def render_prediction_dashboard(evidence: FeatureEvidence, models: dict, feature
 
 
 def page_predict(models: dict, feature_cols: list[str]) -> None:
-    st.markdown(
-        """
-<div class="banner">
-  <h1>AMRShield Sentinel</h1>
-  <p>Defensive E. coli antibiotic-response prototype using calibrated marker models and explicit no-call.</p>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
     st.markdown(f'<div class="warning">{DISCLAIMER}</div>', unsafe_allow_html=True)
 
     render_input_panel()
@@ -1365,29 +1453,43 @@ def page_safety() -> None:
     st.write("Likely-to-work outputs require a target gate; uncertain cases return no-call.")
 
 
-def render_sidebar(models: dict, metrics: dict) -> str:
+NAV_PAGES = ["Predict", "Model Metrics", "Training Data", "Safety Scope"]
+
+
+def render_topnav() -> str:
+    page = st.radio("Navigation", NAV_PAGES, horizontal=True, label_visibility="collapsed", key="topnav")
+    st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+    return page
+
+
+def render_status_sidebar(models: dict, metrics: dict) -> None:
     with st.sidebar:
-        st.title("AMRShield Sentinel")
-        st.caption("Streamlit / Python ML path")
-        st.divider()
+        st.markdown("### System status")
         detector = "ready" if kmer_detector_available() else "missing"
-        st.write(f"Raw-FASTA gene detector: {detector}")
+        amr = "yes" if amrfinder_available() else "no"
+        st.write(f"Raw-FASTA gene detector: **{detector}**")
+        st.write(f"AMRFinderPlus on PATH: **{amr}**")
         st.divider()
+        st.markdown("### Models")
         for antibiotic in ANTIBIOTICS:
             loaded = "loaded" if antibiotic in models else "missing"
             auroc = metrics.get(antibiotic, {}).get("auroc", "NA")
-            st.write(f"{antibiotic}: {loaded} | AUROC {auroc}")
+            st.write(f"{antibiotic.capitalize()}: {loaded} | AUROC {auroc}")
         st.divider()
-        return st.radio("Navigate", ["Predict", "Model Metrics", "Training Data", "Safety Scope"])
+        st.caption("BV-BRC public data | LightGBM + calibration | research prototype")
 
 
 def main() -> None:
-    st.set_page_config(page_title="AMRShield Sentinel", layout="wide")
+    st.set_page_config(page_title="AMRShield Sentinel", layout="wide", initial_sidebar_state="collapsed")
     inject_css()
     models = load_models()
     metrics = load_metrics()
     feature_cols = load_feature_cols()
-    page = render_sidebar(models, metrics)
+
+    render_topbar()
+    page = render_topnav()
+    render_status_sidebar(models, metrics)
+
     if page == "Predict":
         page_predict(models, feature_cols)
     elif page == "Model Metrics":
