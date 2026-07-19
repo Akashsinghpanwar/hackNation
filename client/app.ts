@@ -17,13 +17,15 @@ interface MetricsPayload {
   reliability_points: RelPoint[];
   generalization: GenRow[];
 }
-interface BvbrcDashboard {
-  manifest: Record<string, unknown>;
-  summary: Array<Record<string, string>>;
-  sampleRows: Array<Record<string, string>>;
-}
+type InputMode = "fasta" | "tsv" | "bvbrc";
 
-const state: { config?: AppConfig; result?: AnalysisResult; selectedFile?: { fileName: string; content: string }; mode: "fasta" | "bvbrc" } = { mode: "fasta" };
+const state: {
+  config?: AppConfig;
+  result?: AnalysisResult;
+  selectedFile?: { fileName: string; content: string };
+  selectedTsv?: { fileName: string; content: string };
+  mode: InputMode;
+} = { mode: "fasta" };
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -35,6 +37,7 @@ const decisionLabel = (d: string): string => d.replaceAll("_", " ").replace(/\b\
 const decisionKind = (d: string): string => (d === "likely_to_fail" ? "fail" : d === "likely_to_work" ? "work" : "nocall");
 const pct = (v: number | null | undefined): string => (v === null || v === undefined ? "NA" : `${Math.round(v * 100)}%`);
 const fixed = (v: unknown): string => (typeof v === "number" ? v.toFixed(3) : String(v ?? "NA"));
+const num = (v: number | null | undefined): string => (typeof v === "number" ? v.toLocaleString() : "--");
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, options);
@@ -57,12 +60,11 @@ async function init(): Promise<void> {
   $("#speciesScope").textContent = state.config.supported_species;
   $("#modelVersion").textContent = state.config.model_version;
   $("#confirmation").textContent = state.config.safety.lab_confirmation_message;
-  $("#detectorStatus").textContent = "k-mer detector + 4 LightGBM models";
+  $("#detectorStatus").textContent = "Python inference bridge, k-mer detector, and 4 calibrated LightGBM models";
   $("#drugList").innerHTML = state.config.antibiotics
     .map((d) => `<li>${d.name}<span>${d.target}</span></li>`)
     .join("");
   bindEvents();
-  await renderBvbrc();
   await renderMetrics();
 }
 
@@ -79,7 +81,7 @@ function bindEvents(): void {
   // mode segment
   document.querySelectorAll<HTMLElement>("[data-mode]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      state.mode = btn.dataset.mode as "fasta" | "bvbrc";
+      state.mode = btn.dataset.mode as InputMode;
       document.querySelectorAll<HTMLElement>("[data-mode]").forEach((b) => b.classList.toggle("active", b === btn));
       document.querySelectorAll<HTMLElement>("[data-modepanel]").forEach((p) => (p.hidden = p.dataset.modepanel !== state.mode));
     });
@@ -89,8 +91,20 @@ function bindEvents(): void {
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
     if (!file) return;
-    state.selectedFile = { fileName: file.name, content: await file.text() };
+    const content = await file.text();
+    state.selectedFile = { fileName: file.name, content };
     $("#fileStatus").textContent = `${file.name} loaded`;
+    ($("#sequencePreview") as HTMLTextAreaElement).value = content.slice(0, 100_000);
+  });
+
+  const tsvInput = $("#tsvFile") as HTMLInputElement;
+  tsvInput.addEventListener("change", async () => {
+    const file = tsvInput.files?.[0];
+    if (!file) return;
+    const content = await file.text();
+    state.selectedTsv = { fileName: file.name, content };
+    $("#tsvStatus").textContent = `${file.name} loaded`;
+    ($("#tsvPreview") as HTMLTextAreaElement).value = content.slice(0, 100_000);
   });
 
   document.querySelectorAll<HTMLButtonElement>("[data-sample]").forEach((btn) => {
@@ -115,17 +129,21 @@ function bindEvents(): void {
   });
 
   $("#analyseButton").addEventListener("click", runFasta);
+  $("#analyseTsvButton").addEventListener("click", runTsv);
   $("#analyseBvbrcButton").addEventListener("click", runBvbrc);
 }
 
 async function runFasta(): Promise<void> {
   const preview = ($("#sequencePreview") as HTMLTextAreaElement).value.trim();
-  const selected = state.selectedFile ?? (preview ? { fileName: "manual_input.fasta", content: preview } : undefined);
+  const loadedPreview = state.selectedFile?.content.slice(0, 100_000).trim();
+  const selected = preview && preview !== loadedPreview
+    ? { fileName: state.selectedFile?.fileName ?? "manual_input.fasta", content: preview }
+    : state.selectedFile ?? (preview ? { fileName: "manual_input.fasta", content: preview } : undefined);
   if (!selected) {
     setStatus("Load a FASTA file, choose a demo sample, or paste sequence text.", true);
     return;
   }
-  setStatus("Scanning genome → k-mer detect → LightGBM → target gate…");
+  setStatus("Analyzing FASTA through feature extraction and calibrated models...");
   try {
     const species = ($("#species") as HTMLSelectElement).value;
     const result = await fetchJson<AnalysisResult>("/api/analyse", {
@@ -139,13 +157,37 @@ async function runFasta(): Promise<void> {
   }
 }
 
+async function runTsv(): Promise<void> {
+  const preview = ($("#tsvPreview") as HTMLTextAreaElement).value.trim();
+  const loadedPreview = state.selectedTsv?.content.slice(0, 100_000).trim();
+  const selected = preview && preview !== loadedPreview
+    ? { fileName: state.selectedTsv?.fileName ?? "amrfinder_input.tsv", content: preview }
+    : state.selectedTsv ?? (preview ? { fileName: "amrfinder_input.tsv", content: preview } : undefined);
+  if (!selected) {
+    setStatus("Load or paste an AMRFinderPlus TSV file.", true);
+    return;
+  }
+  setStatus("Parsing AMRFinderPlus TSV and running calibrated models...");
+  try {
+    const species = ($("#species") as HTMLSelectElement).value;
+    const result = await fetchJson<AnalysisResult>("/api/analyse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "tsv", species, fileName: selected.fileName, content: selected.content })
+    });
+    showResult(result);
+  } catch (e) {
+    setStatus(e instanceof Error ? e.message : "TSV analysis failed.", true);
+  }
+}
+
 async function runBvbrc(): Promise<void> {
   const gid = ($("#genomeId") as HTMLInputElement).value.trim();
   if (!/^\d+\.\d+$/.test(gid)) {
     setStatus("Enter a BV-BRC genome id like 562.12960.", true);
     return;
   }
-  setStatus(`Fetching BV-BRC ${gid} → real model inference…`);
+  setStatus(`Fetching BV-BRC ${gid} and running model inference...`);
   try {
     const result = await fetchJson<AnalysisResult>("/api/analyse-bvbrc", {
       method: "POST",
@@ -161,7 +203,7 @@ async function runBvbrc(): Promise<void> {
 function showResult(result: AnalysisResult): void {
   state.result = result;
   renderResult(result);
-  setStatus("Analysis complete. Firewall matrix updated.");
+  setStatus("Analysis complete. Results updated.");
   document.querySelector<HTMLElement>('[data-nav="results"]')?.click();
 }
 
@@ -172,6 +214,20 @@ function renderResult(result: AnalysisResult): void {
   $("#failCount").textContent = String(preds.filter((p) => p.decision === "likely_to_fail").length);
   $("#workCount").textContent = String(preds.filter((p) => p.decision === "likely_to_work").length);
   $("#noCallCount").textContent = String(preds.filter((p) => p.decision === "no_call").length);
+
+  const qc = result.qc;
+  $("#qcRunId").textContent = result.run_id || qc.genome_id || "--";
+  $("#qcBases").textContent = num(qc.sequence_length);
+  $("#qcContigs").textContent = num(qc.contig_count);
+  $("#qcAmbiguous").textContent = pct(qc.ambiguous_base_fraction);
+  $("#qcHash").textContent = qc.sha256 || "--";
+  const qcStatus = $("#qcStatus");
+  qcStatus.textContent = qc.qc_status;
+  qcStatus.className = `status-badge ${qc.qc_status}`;
+  const warnings = [...(result.warnings ?? []), ...(qc.warnings ?? [])];
+  $("#warningList").innerHTML = warnings.length
+    ? warnings.map((w) => `<div class="warning-item">${w}</div>`).join("")
+    : `<div class="warning-item ok">No QC warnings returned.</div>`;
 
   // probability bar chart
   $("#barChart").innerHTML = preds
@@ -188,6 +244,22 @@ function renderResult(result: AnalysisResult): void {
         </div>
         <div class="bar-meta"><span class="tag ${kind}">${decisionLabel(p.decision)}</span><br><span class="mono">P(res) ${pct(p.resistance_probability)}</span></div>
       </div>`;
+    })
+    .join("");
+
+  $("#resultTable").innerHTML = preds
+    .map((p) => {
+      const kind = decisionKind(p.decision);
+      return `
+      <tr>
+        <td><strong>${p.antibiotic}</strong><br><small>${p.drug_class ?? ""}</small></td>
+        <td><span class="tag ${kind}">${decisionLabel(p.decision)}</span></td>
+        <td>${pct(p.resistance_probability)}</td>
+        <td>${pct(p.calibrated_confidence)}</td>
+        <td>${p.target_status}</td>
+        <td>${p.evidence_category}</td>
+        <td>${p.reason_codes.join(", ") || "none"}</td>
+      </tr>`;
     })
     .join("");
 
@@ -283,30 +355,6 @@ function drawReliability(points: RelPoint[]): void {
     c.setAttribute("r", "3.5");
     svg.appendChild(c);
   }
-}
-
-async function renderBvbrc(): Promise<void> {
-  try {
-    const payload = await fetchJson<BvbrcDashboard>("/api/bvbrc/training-dashboard");
-    $("#bvRows").textContent = numFmt(payload.manifest.amr_rows);
-    $("#bvGenomes").textContent = numFmt(payload.manifest.unique_genomes);
-    $("#bvTaxon").textContent = String(payload.manifest.taxon_id ?? "--");
-    $("#bvEvidence").textContent = String(payload.manifest.evidence_filter ?? "--");
-    $("#bvGenerated").textContent = `generated ${String(payload.manifest.generated_at ?? "")}`;
-    $("#bvSummaryTable").innerHTML = payload.summary
-      .map((r) => `<tr><td>${r.antibiotic}</td><td>${r.resistant}</td><td>${r.susceptible}</td><td>${r.total}</td><td>${r.unique_genomes}</td></tr>`)
-      .join("");
-    $("#bvSampleTable").innerHTML = payload.sampleRows
-      .map((r) => `<tr><td>${r.genome_id}<br><small>${r.genome_name ?? ""}</small></td><td>${r.antibiotic}</td><td><span class="badge ${r.label === "resistant" ? "danger" : "success"}">${r.label}</span></td><td>${r.genome_quality || "NA"}</td><td>${r.genetic_group || r.genome_id}</td><td>${r.laboratory_typing_method || "NA"}</td></tr>`)
-      .join("");
-  } catch (e) {
-    $("#bvGenerated").textContent = e instanceof Error ? e.message : "BV-BRC training data unavailable.";
-  }
-}
-
-function numFmt(v: unknown): string {
-  const n = Number(v);
-  return Number.isFinite(n) ? n.toLocaleString() : String(v ?? "--");
 }
 
 function toCsv(result: AnalysisResult): string {

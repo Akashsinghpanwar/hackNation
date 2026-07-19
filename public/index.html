@@ -7,43 +7,76 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <div class="scanline" aria-hidden="true"></div>
-
-    <div class="window">
-      <!-- retro titlebar -->
-      <div class="titlebar">
-        <div class="titlebar-left">
-          <span class="logo-chip">AS</span>
-          <span class="titlebar-name">AMRShield Sentinel</span>
-          <span class="titlebar-sub">// GENOME FIREWALL</span>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">AS</span>
+          <div>
+            <strong>AMRShield Sentinel</strong>
+            <small>Genome AMR dashboard</small>
+          </div>
         </div>
-        <div class="titlebar-right">
-          <span class="brand-badge">HackNation · Challenge 06</span>
-          <span class="brand-badge alt">Built with OpenAI</span>
-          <span class="win-btns" aria-hidden="true"><i>_</i><i>▢</i><i>✕</i></span>
+
+        <nav class="nav">
+          <button class="tab active" data-nav="predict">Predict</button>
+          <button class="tab" data-nav="results">Results</button>
+          <button class="tab" data-nav="metrics">Model Metrics</button>
+          <button class="tab" data-nav="safety">Safety</button>
+        </nav>
+
+        <div class="side-panel">
+          <span class="eyebrow">Model</span>
+          <strong id="modelVersion">loading</strong>
+          <p id="detectorStatus">initializing</p>
         </div>
-      </div>
 
-      <!-- horizontal top nav (retro raised tabs) -->
-      <nav class="tabbar">
-        <button class="tab active" data-nav="predict">Predict</button>
-        <button class="tab" data-nav="results">Results</button>
-        <button class="tab" data-nav="metrics">Model Metrics</button>
-        <button class="tab" data-nav="trust">Training Data</button>
-        <button class="tab" data-nav="safety">Safety</button>
-        <span class="tab-status" id="runStatus">Ready</span>
-      </nav>
+        <div class="side-panel compact">
+          <span class="eyebrow">Species</span>
+          <strong id="speciesScope">--</strong>
+        </div>
+      </aside>
 
-      <main class="stage">
-        <div class="disclaimer" id="confirmation"></div>
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>Antibiotic Response Dashboard</h1>
+            <p>Upload genome evidence, inspect marker signals, and review calibrated no-call decisions.</p>
+          </div>
+          <div class="run-status" id="runStatus">Ready</div>
+        </header>
 
-        <!-- ============ PREDICT ============ -->
+        <div class="notice" id="confirmation"></div>
+
         <section class="panel-grid active" data-panel="predict">
-          <div class="card intake">
-            <div class="card-head"><h2>Genome Intake</h2><span class="mono" id="detectorStatus">detector: --</span></div>
+          <article class="card intake">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Input</span>
+                <h2>Genome Intake</h2>
+              </div>
+            </div>
+
+            <div class="method-grid">
+              <div class="method-card recommended">
+                <span>Preferred</span>
+                <strong>AMRFinderPlus TSV</strong>
+                <small>Best marker evidence for model inference.</small>
+              </div>
+              <div class="method-card">
+                <span>Supported</span>
+                <strong>Annotated FASTA</strong>
+                <small>Headers with gene/product names are parsed.</small>
+              </div>
+              <div class="method-card">
+                <span>Prototype</span>
+                <strong>Raw FASTA</strong>
+                <small>Uses local k-mer detector when sequence is large enough.</small>
+              </div>
+            </div>
 
             <div class="seg" id="modeSeg">
               <button class="seg-btn active" data-mode="fasta">FASTA</button>
+              <button class="seg-btn" data-mode="tsv">AMRFinder TSV</button>
               <button class="seg-btn" data-mode="bvbrc">BV-BRC ID</button>
             </div>
 
@@ -53,11 +86,11 @@
 
               <label class="drop" for="fastaFile">
                 <input id="fastaFile" type="file" accept=".fa,.fasta,.fna,.ffn,.faa,.txt">
-                <span>Drop or select FASTA (raw genome supported)</span>
+                <span>Drop or select FASTA</span>
                 <small id="fileStatus">No file loaded</small>
               </label>
 
-              <label class="lbl" for="sequencePreview">Or paste sequence / demo buffer</label>
+              <label class="lbl" for="sequencePreview">Paste FASTA or review demo buffer</label>
               <textarea id="sequencePreview" spellcheck="false" placeholder=">contig_1&#10;ACGTACGT..."></textarea>
 
               <div class="sample-row">
@@ -65,38 +98,51 @@
                 <button data-sample="cipro_resistant_ecoli.fasta">Cipro-R sample</button>
                 <button data-sample="susceptible_ecoli.fasta">Susceptible sample</button>
               </div>
-              <button id="analyseButton" class="primary">Analyze Genome</button>
+              <button id="analyseButton" class="primary">Analyze FASTA</button>
+              <p class="hint">Large raw FASTA uses the local k-mer detector when available. AMRFinderPlus TSV remains the preferred evidence path.</p>
+            </div>
+
+            <div data-modepanel="tsv" hidden>
+              <label class="drop" for="tsvFile">
+                <input id="tsvFile" type="file" accept=".tsv,.tab,.txt">
+                <span>Drop or select AMRFinderPlus TSV</span>
+                <small id="tsvStatus">No TSV loaded</small>
+              </label>
+
+              <label class="lbl" for="tsvPreview">Paste AMRFinderPlus TSV</label>
+              <textarea id="tsvPreview" spellcheck="false" placeholder="Gene symbol&#9;Sequence name&#9;Element type&#10;blaTEM-1&#9;contig_1&#9;AMR"></textarea>
+
+              <button id="analyseTsvButton" class="primary">Analyze AMRFinder TSV</button>
+              <p class="hint">Use this when AMRFinderPlus was run outside the app.</p>
             </div>
 
             <div data-modepanel="bvbrc" hidden>
-              <label class="lbl" for="genomeId">BV-BRC genome id</label>
+              <label class="lbl" for="genomeId">BV-BRC genome ID</label>
               <input id="genomeId" type="text" placeholder="562.12960">
-              <p class="hint">Fetches live gene annotations from the public BV-BRC API and runs the real models.</p>
+              <p class="hint">Fetches public BV-BRC gene annotations and runs the same local models.</p>
               <div class="sample-row">
                 <button data-gid="562.12960">562.12960</button>
                 <button data-gid="562.11347">562.11347</button>
                 <button data-gid="562.65608">562.65608</button>
               </div>
-              <button id="analyseBvbrcButton" class="primary">Fetch &amp; Analyze</button>
+              <button id="analyseBvbrcButton" class="primary">Fetch and Analyze</button>
             </div>
-          </div>
+          </article>
 
-          <div class="card scope">
-            <div class="card-head"><h2>Configured Scope</h2><span class="mono" id="modelVersion"></span></div>
-            <div class="scope-row"><span>Species</span><strong id="speciesScope"></strong></div>
-            <div class="scope-row"><span>Pipeline</span><strong>k-mer detect → LightGBM → target gate → no-call</strong></div>
+          <article class="card scope">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Configured Scope</span>
+                <h2>Antibiotic Panel</h2>
+              </div>
+            </div>
+            <div class="scope-row"><span>Pipeline</span><strong>feature extraction -> LightGBM -> target gate -> no-call</strong></div>
+            <div class="scope-row"><span>Output</span><strong>fail / work / no-call with confidence</strong></div>
+            <div class="scope-row"><span>Safety</span><strong>lab confirmation required for every result</strong></div>
             <ul class="drug-list" id="drugList"></ul>
-            <pre class="console">AMRSHIELD SENTINEL // GENOME FIREWALL
--------------------------------------
-&gt; FASTA_INPUT       READY
-&gt; AMR_MARKERS       STANDBY
-&gt; TARGET_GATE       ARMED
-&gt; NO_CALL_POLICY    ACTIVE
-[ DEFENSIVE MODE ONLY ]</pre>
-          </div>
+          </article>
         </section>
 
-        <!-- ============ RESULTS ============ -->
         <section class="panel-stack" data-panel="results">
           <div class="kpi-row">
             <div class="kpi"><span>Source</span><strong id="kpiSource">--</strong></div>
@@ -106,85 +152,120 @@
             <div class="kpi accent-grey"><span>No-call</span><strong id="noCallCount">0</strong></div>
           </div>
 
-          <div class="card">
-            <div class="card-head"><h2>Resistance Firewall Matrix</h2>
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Run Trace</span>
+                <h2>Sample QC</h2>
+              </div>
+              <span class="status-badge" id="qcStatus">not run</span>
+            </div>
+            <div class="qc-grid">
+              <div class="qc-item"><span>Run ID</span><strong id="qcRunId">--</strong></div>
+              <div class="qc-item"><span>Bases</span><strong id="qcBases">--</strong></div>
+              <div class="qc-item"><span>Contigs</span><strong id="qcContigs">--</strong></div>
+              <div class="qc-item"><span>Ambiguous</span><strong id="qcAmbiguous">--</strong></div>
+              <div class="qc-item wide"><span>SHA-256</span><strong id="qcHash">--</strong></div>
+            </div>
+            <div class="warning-list" id="warningList"></div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Predictions</span>
+                <h2>Resistance Probability</h2>
+              </div>
               <div class="btn-row"><button id="downloadJson">JSON</button><button id="downloadCsv">CSV</button></div>
             </div>
             <div id="barChart" class="bar-chart"></div>
-          </div>
+          </article>
 
           <div id="evidenceDeck" class="deck"></div>
 
-          <div class="card">
-            <div class="card-head"><h2>Detected AMR Markers</h2><span class="mono">reference k-mer / annotation</span></div>
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Decision Detail</span>
+                <h2>Antibiotic Report Table</h2>
+              </div>
+            </div>
+            <table class="grid">
+              <thead><tr><th>Drug</th><th>Decision</th><th>P resistant</th><th>Confidence</th><th>Target gate</th><th>Evidence</th><th>Reason codes</th></tr></thead>
+              <tbody id="resultTable"></tbody>
+            </table>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Evidence</span>
+                <h2>Detected AMR Markers</h2>
+              </div>
+            </div>
             <div id="geneChips" class="chips"></div>
-          </div>
+          </article>
         </section>
 
-        <!-- ============ METRICS ============ -->
         <section class="panel-stack" data-panel="metrics">
           <div class="kpi-row" id="metricKpis"></div>
-          <div class="card">
-            <div class="card-head"><h2>Held-out Performance</h2><span class="mono">grouped split</span></div>
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Evaluation</span>
+                <h2>Held-out Performance</h2>
+              </div>
+              <span class="mono">grouped split</span>
+            </div>
             <table class="grid">
               <thead><tr><th>Drug</th><th>AUROC</th><th>PR-AUC</th><th>Bal. Acc</th><th>Resist. recall</th><th>Suscept. recall</th><th>Brier</th><th>No-call</th></tr></thead>
               <tbody id="metricsTable"></tbody>
             </table>
-          </div>
-          <div class="card">
-            <div class="card-head"><h2>Generalization by Genetic Group</h2><span class="mono">overall vs within-lineage AUROC</span></div>
+          </article>
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Generalization</span>
+                <h2>By Genetic Group</h2>
+              </div>
+              <span class="mono">overall vs within-lineage AUROC</span>
+            </div>
             <div id="genChart" class="bar-chart"></div>
-            <p class="hint">A large gap means the overall score leans on lineage prevalence rather than per-sample sequence signal.</p>
-          </div>
-          <div class="card chart-card">
-            <div class="card-head"><h2>Reliability Plot</h2><span class="mono" id="relDrug">ampicillin</span></div>
+            <p class="hint">A large gap means the score may lean on lineage prevalence rather than sample-specific sequence signal.</p>
+          </article>
+          <article class="card chart-card">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Calibration</span>
+                <h2>Reliability Plot</h2>
+              </div>
+              <span class="mono" id="relDrug">ampicillin</span>
+            </div>
             <svg viewBox="0 0 540 300" role="img" aria-label="Reliability plot" id="relSvg">
               <line x1="50" y1="260" x2="500" y2="260" class="axis"></line>
               <line x1="50" y1="260" x2="50" y2="30" class="axis"></line>
               <line class="ideal" x1="50" y1="260" x2="470" y2="40"></line>
               <polyline id="reliabilityPolyline"></polyline>
             </svg>
-          </div>
+          </article>
         </section>
 
-        <!-- ============ TRAINING DATA ============ -->
-        <section class="panel-stack" data-panel="trust">
-          <div class="kpi-row">
-            <div class="kpi"><span>BV-BRC rows</span><strong id="bvRows">--</strong></div>
-            <div class="kpi"><span>Unique genomes</span><strong id="bvGenomes">--</strong></div>
-            <div class="kpi"><span>Taxon</span><strong id="bvTaxon">--</strong></div>
-            <div class="kpi"><span>Evidence</span><strong id="bvEvidence">--</strong></div>
-          </div>
-          <div class="card">
-            <div class="card-head"><h2>BV-BRC Training Labels</h2><span class="mono" id="bvGenerated">waiting for local dataset</span></div>
-            <table class="grid">
-              <thead><tr><th>Antibiotic</th><th>Resistant</th><th>Susceptible</th><th>Total</th><th>Unique Genomes</th></tr></thead>
-              <tbody id="bvSummaryTable"></tbody>
-            </table>
-          </div>
-          <div class="card">
-            <div class="card-head"><h2>Training Row Sample</h2><span class="mono">joined AMR labels + metadata</span></div>
-            <table class="grid">
-              <thead><tr><th>Genome</th><th>Drug</th><th>Label</th><th>Quality</th><th>Group</th><th>Method</th></tr></thead>
-              <tbody id="bvSampleTable"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- ============ SAFETY ============ -->
         <section class="panel-stack" data-panel="safety">
-          <div class="card">
-            <div class="card-head"><h2>Safety Governor</h2><span class="mono">defensive by construction</span></div>
+          <article class="card">
+            <div class="card-head">
+              <div>
+                <span class="eyebrow">Safety</span>
+                <h2>Use Boundaries</h2>
+              </div>
+            </div>
             <ul class="safety-list">
-              <li>Predicts and explains resistance that may already exist.</li>
+              <li>Predicts and explains resistance signals that may already exist.</li>
               <li>Does not design, edit, optimize, strengthen, or synthesize organisms.</li>
               <li>Does not prescribe antibiotics or replace standard laboratory testing.</li>
               <li>Returns no-call for weak, conflicting, unsupported, or low-quality evidence.</li>
               <li>Separates known biological markers from statistical associations.</li>
             </ul>
-            <pre class="console">POST /api/analyse         { species, fileName, content }
-POST /api/analyse-bvbrc   { genome_id: "562.12960" }</pre>
-          </div>
+          </article>
         </section>
       </main>
     </div>
