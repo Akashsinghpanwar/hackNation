@@ -54,9 +54,9 @@ On top of the genomic prediction, the app adds two OpenAI modalities (optional):
   chat model (`OPENAI_TEXT_MODEL`, default `gpt-4o-mini`) which explains, in plain
   language, which detected genes drive which prediction and what a no-call means, always
   ending with the lab-confirmation caveat.
-- **Report-card infographic (image)** — `POST /api/report-image` uses an image model
-  (`OPENAI_IMAGE_MODEL`, default `gpt-image-1`) to generate a shareable "AMR Resistance
-  Report Card" from the prediction.
+- **Read aloud (audio)** — `POST /api/speak` sends the generated summary to a
+  text-to-speech model (`OPENAI_TTS_MODEL`, default `gpt-4o-mini-tts`) and returns MP3
+  audio played inline.
 
 Both are surfaced in the Results tab ("AI Report Assistant"). Enable them by putting your
 key in a gitignored `.env` (never commit it):
@@ -64,7 +64,8 @@ key in a gitignored `.env` (never commit it):
 ```
 OPENAI_API_KEY=sk-...
 OPENAI_TEXT_MODEL=gpt-4o-mini
-OPENAI_IMAGE_MODEL=gpt-image-1
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
+OPENAI_TTS_VOICE=alloy
 ```
 
 If `OPENAI_API_KEY` is unset, the core genomic prediction still works; only the AI

@@ -79,28 +79,22 @@ export async function generateNarrative(result: AnalysisLike): Promise<string> {
   return choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-/** Generated "resistance report card" infographic (image modality). Returns base64 PNG. */
-export async function generateReportImage(result: AnalysisLike): Promise<string> {
-  const fails = result.predictions.filter((p) => p.decision === "likely_to_fail").map((p) => p.antibiotic);
-  const works = result.predictions.filter((p) => p.decision === "likely_to_work").map((p) => p.antibiotic);
-  const nocalls = result.predictions.filter((p) => p.decision === "no_call").map((p) => p.antibiotic);
-  const genes = (result.detected_genes ?? []).slice(0, 6);
-  const prompt =
-    "A clean, modern medical infographic 'AMR Resistance Report Card' for an E. coli bacterial genome. " +
-    "Flat vector poster style, dark slate background with teal accents, no photorealism, highly legible short labels only. " +
-    "Top: a stylized bacterium next to a DNA double helix and a shield icon. " +
-    `A red panel titled 'LIKELY TO FAIL' listing: ${fails.join(", ") || "none"}. ` +
-    `A green panel titled 'LIKELY TO WORK' listing: ${works.join(", ") || "none"}. ` +
-    `A grey panel titled 'NO CALL' listing: ${nocalls.join(", ") || "none"}. ` +
-    `A small row of gene chips: ${genes.join(", ") || "none"}. ` +
-    "Minimal, professional, dashboard aesthetic. Do not include long sentences or paragraphs.";
-  const data = await postJson("/images/generations", {
-    model: process.env.OPENAI_IMAGE_MODEL ?? "gpt-image-1",
-    prompt,
-    size: "1024x1024"
-  }, 120_000);
-  const arr = data.data as Array<{ b64_json?: string }> | undefined;
-  const b64 = arr?.[0]?.b64_json;
-  if (!b64) throw new Error("No image data returned from OpenAI.");
-  return b64;
+/** Text-to-speech of the clinical narrative (audio modality). Returns base64 MP3. */
+export async function generateSpeech(text: string): Promise<string> {
+  const input = text.trim().slice(0, 4000);
+  if (!input) throw new Error("Nothing to read — generate the summary first.");
+  const res = await fetch(`${API}/audio/speech`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey()}` },
+    body: JSON.stringify({
+      model: process.env.OPENAI_TTS_MODEL ?? "gpt-4o-mini-tts",
+      voice: process.env.OPENAI_TTS_VOICE ?? "alloy",
+      input,
+      response_format: "mp3"
+    }),
+    signal: AbortSignal.timeout(60_000)
+  });
+  if (!res.ok) throw new Error(`OpenAI /audio/speech error ${res.status}: ${(await res.text()).slice(0, 400)}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  return buf.toString("base64");
 }

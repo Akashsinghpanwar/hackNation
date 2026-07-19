@@ -143,7 +143,7 @@ function bindEvents(): void {
   $("#analyseTsvButton").addEventListener("click", runTsv);
   $("#analyseBvbrcButton").addEventListener("click", runBvbrc);
   $("#btnNarrative").addEventListener("click", runNarrative);
-  $("#btnImage").addEventListener("click", runReportImage);
+  $("#btnSpeak").addEventListener("click", runSpeak);
 }
 
 async function checkAiStatus(): Promise<void> {
@@ -151,11 +151,13 @@ async function checkAiStatus(): Promise<void> {
     const { configured } = await fetchJson<{ configured: boolean }>("/api/ai-status");
     $("#aiStatus").textContent = configured ? "OpenAI connected" : "set OPENAI_API_KEY in .env";
     ($("#btnNarrative") as HTMLButtonElement).disabled = !configured;
-    ($("#btnImage") as HTMLButtonElement).disabled = !configured;
+    if (!configured) ($("#btnSpeak") as HTMLButtonElement).disabled = true;
   } catch {
     $("#aiStatus").textContent = "AI status unavailable";
   }
 }
+
+let lastNarrative = "";
 
 async function runNarrative(): Promise<void> {
   if (!state.result) {
@@ -170,32 +172,41 @@ async function runNarrative(): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ result: state.result })
     });
+    lastNarrative = narrative;
     const html = narrative
       .replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
     box.innerHTML = html;
+    ($("#btnSpeak") as HTMLButtonElement).disabled = false;
   } catch (e) {
     box.innerHTML = `<p class="hint error">${e instanceof Error ? e.message : "Summary failed."}</p>`;
   }
 }
 
-async function runReportImage(): Promise<void> {
-  if (!state.result) {
-    setStatus("Run an analysis first, then generate the report card.", true);
+async function runSpeak(): Promise<void> {
+  if (!lastNarrative) {
+    setStatus("Generate the clinical summary first, then read it aloud.", true);
     return;
   }
-  const box = $("#aiImage");
-  box.innerHTML = `<p class="hint">Generating report card with gpt-image (this can take ~20s)...</p>`;
+  const btn = $("#btnSpeak") as HTMLButtonElement;
+  const audio = $("#aiAudio") as HTMLAudioElement;
+  btn.disabled = true;
+  btn.textContent = "Synthesizing voice...";
   try {
-    const { image_b64 } = await fetchJson<{ image_b64: string }>("/api/report-image", {
+    const { audio_b64 } = await fetchJson<{ audio_b64: string }>("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ result: state.result })
+      body: JSON.stringify({ text: lastNarrative })
     });
-    box.innerHTML = `<img alt="AMR report card" src="data:image/png;base64,${image_b64}"><a class="dl" download="amr_report_card.png" href="data:image/png;base64,${image_b64}">Download PNG</a>`;
+    audio.src = `data:audio/mp3;base64,${audio_b64}`;
+    audio.hidden = false;
+    await audio.play().catch(() => undefined);
   } catch (e) {
-    box.innerHTML = `<p class="hint error">${e instanceof Error ? e.message : "Image failed."}</p>`;
+    setStatus(e instanceof Error ? e.message : "Voice synthesis failed.", true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Read aloud";
   }
 }
 

@@ -5,7 +5,7 @@ import { createReadStream } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { runInference } from "./pipeline/pythonBridge.js";
 import { buildMetricsPayload } from "./pipeline/metrics.js";
-import { aiConfigured, generateNarrative, generateReportImage, type AnalysisLike } from "./pipeline/openai.js";
+import { aiConfigured, generateNarrative, generateSpeech, type AnalysisLike } from "./pipeline/openai.js";
 import { loadConfig, rootDir } from "./config.js";
 import { loadBvbrcTrainingDashboard } from "./bvbrcData.js";
 
@@ -160,15 +160,15 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     return;
   }
 
-  if (request.method === "POST" && url.pathname === "/api/report-image") {
+  if (request.method === "POST" && url.pathname === "/api/speak") {
     try {
-      const body = await readRequestJson<{ result: AnalysisLike }>(request);
-      if (!body.result?.predictions) {
-        sendJson(response, 400, { error: "Run an analysis first." });
+      const body = await readRequestJson<{ text: string }>(request);
+      if (!body.text || !body.text.trim()) {
+        sendJson(response, 400, { error: "Generate the summary first." });
         return;
       }
-      const image_b64 = await generateReportImage(body.result);
-      sendJson(response, 200, { image_b64 });
+      const audio_b64 = await generateSpeech(body.text);
+      sendJson(response, 200, { audio_b64 });
     } catch (error) {
       sendJson(response, 500, { error: error instanceof Error ? error.message : "Unknown error" });
     }
