@@ -118,6 +118,12 @@ class FeatureEvidence:
     products: list[str]
     amrfinder_rows: list[dict[str, str]]
     species_supported: bool = True
+    base_count: int = 0
+    contig_count: int = 0
+    genome_length_z: float = 0.0
+    contigs_z: float = 0.0
+    requires_annotation: bool = False
+    annotation_warning: str = ""
 
 
 def inject_css() -> None:
@@ -313,14 +319,61 @@ def detect_targets(products: list[str]) -> set[str]:
     return targets
 
 
-def parse_annotated_fasta(text: str) -> FeatureEvidence:
-    headers = [line[1:].strip() for line in text.splitlines() if line.startswith(">")]
+def fasta_stats(text: str) -> tuple[list[str], int, int, float, float]:
+    headers: list[str] = []
+    base_count = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(">"):
+            headers.append(stripped[1:].strip())
+            continue
+        base_count += sum(1 for char in stripped.upper() if char in {"A", "C", "G", "T", "N"})
+
+    stats = load_feature_meta().get("norm_stats", {})
+    length_mean = float(stats.get("length_mean", 0.0) or 0.0)
+    length_std = float(stats.get("length_std", 1.0) or 1.0)
+    contigs_mean = float(stats.get("contigs_mean", 0.0) or 0.0)
+    contigs_std = float(stats.get("contigs_std", 1.0) or 1.0)
+    contig_count = len(headers)
+    genome_length_z = (base_count - length_mean) / length_std if length_std else 0.0
+    contigs_z = (contig_count - contigs_mean) / contigs_std if contigs_std else 0.0
+    return headers, base_count, contig_count, genome_length_z, contigs_z
+
+
+def headers_look_annotated(headers: list[str]) -> bool:
+    annotation_pattern = re.compile(
+        r"product=|gene=|protein|lactamase|resistance|efflux|gyrase|topoisomerase|ribosomal|"
+        r"penicillin-binding|aminoglycoside|tetracycline|Escherichia|fig\|",
+        re.IGNORECASE,
+    )
+    return any(annotation_pattern.search(header) for header in headers)
+
+
+def parse_annotated_fasta(text: str, require_annotation: bool = False) -> FeatureEvidence:
+    headers, base_count, contig_count, genome_length_z, contigs_z = fasta_stats(text)
+    genes = classify_products(headers)
+    targets = detect_targets(headers)
+    missing_annotation = require_annotation and not genes and not targets and not headers_look_annotated(headers)
+    warning = (
+        "Raw FASTA sequence was loaded, but no gene/product annotations were detected. "
+        "This model needs AMR marker features from AMRFinderPlus or annotated FASTA headers."
+        if missing_annotation
+        else ""
+    )
     return FeatureEvidence(
         source="Annotated FASTA headers",
-        genes=classify_products(headers),
-        targets=detect_targets(headers),
+        genes=genes,
+        targets=targets,
         products=headers,
         amrfinder_rows=[],
+        base_count=base_count,
+        contig_count=contig_count,
+        genome_length_z=genome_length_z,
+        contigs_z=contigs_z,
+        requires_annotation=missing_annotation,
+        annotation_warning=warning,
     )
 
 
@@ -407,8 +460,10 @@ def build_feature_vector(evidence: FeatureEvidence, feature_cols: list[str]) -> 
     for col in feature_cols:
         if col == "amr_gene_burden":
             values.append(float(sum(1 for gene in gene_feature_cols if gene in evidence.genes)))
-        elif col in {"genome_length_z", "contigs_z"}:
-            values.append(0.0)
+        elif col == "genome_length_z":
+            values.append(float(getattr(evidence, "genome_length_z", 0.0)))
+        elif col == "contigs_z":
+            values.append(float(getattr(evidence, "contigs_z", 0.0)))
         else:
             values.append(1.0 if col in evidence.genes else 0.0)
     return np.array(values)
@@ -423,6 +478,21 @@ def target_status(antibiotic: str, evidence: FeatureEvidence) -> tuple[str, bool
 
 
 def predict(evidence: FeatureEvidence, models: dict, feature_cols: list[str]) -> list[dict]:
+    if getattr(evidence, "requires_annotation", False):
+        return [
+            {
+                "antibiotic": antibiotic,
+                "decision": "no_call",
+                "prob": None,
+                "confidence": None,
+                "evidence_category": "raw FASTA requires AMRFinderPlus or annotated gene features",
+                "markers": [],
+                "target_status": "not_evaluated",
+                "reason_codes": ["missing_amrfinderplus_annotation"],
+            }
+            for antibiotic in ANTIBIOTICS
+        ]
+
     base_vector = build_feature_vector(evidence, feature_cols)
     predictions = []
     for antibiotic in ANTIBIOTICS:
@@ -758,7 +828,10 @@ def render_source_details(evidence: FeatureEvidence) -> None:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
     st.subheader("Input Evidence")
     st.write(f"Source: `{evidence.source}`")
+    st.write(f"FASTA stats: `{getattr(evidence, 'contig_count', 0):,}` contigs / `{getattr(evidence, 'base_count', 0):,}` bases")
     st.write(f"Detected AMR feature families: `{len(evidence.genes)}`")
+    if getattr(evidence, "annotation_warning", ""):
+        st.warning(evidence.annotation_warning)
     if evidence.genes:
         st.markdown(" ".join(f'<span class="chip">{gene}</span>' for gene in sorted(evidence.genes)), unsafe_allow_html=True)
     st.write(f"Detected target families: `{', '.join(sorted(evidence.targets)) or 'none from annotations'}`")
@@ -793,7 +866,7 @@ def process_fasta_text(fasta_text: str, source: str, run_amrfinder: bool) -> Fea
         evidence = run_amrfinder_on_fasta(fasta_text)
         evidence.source = f"AMRFinderPlus from FASTA: {source}"
         return evidence
-    evidence = parse_annotated_fasta(fasta_text)
+    evidence = parse_annotated_fasta(fasta_text, require_annotation=True)
     evidence.source = f"Annotated FASTA fallback: {source}"
     return evidence
 
@@ -831,11 +904,10 @@ def render_input_panel() -> None:
                     evidence = process_fasta_text(fasta_text, source, run_amrfinder)
                 set_evidence(evidence)
                 st.success(f"Loaded FASTA input: {source}")
-                if not evidence.genes:
-                    st.warning(
-                        "No AMR marker names were detected from headers. For raw contig FASTA, run AMRFinderPlus "
-                        "outside the app and upload its TSV, or install AMRFinderPlus on PATH."
-                    )
+                if getattr(evidence, "requires_annotation", False):
+                    st.warning(evidence.annotation_warning)
+                elif not evidence.genes:
+                    st.info("No resistance marker families were detected; prediction will rely on absence of known markers and target gate status.")
             except Exception as exc:
                 st.error(f"FASTA analysis failed: {exc}")
 
@@ -871,7 +943,7 @@ def render_input_panel() -> None:
         selected = st.selectbox("Demo sample", list(demos))
         if st.button("Load demo sample", type="primary", use_container_width=True):
             text = (DEMO_SAMPLES_DIR / demos[selected]).read_text(encoding="utf-8")
-            evidence = parse_annotated_fasta(text)
+            evidence = parse_annotated_fasta(text, require_annotation=True)
             evidence.source = f"Demo annotated FASTA: {demos[selected]}"
             set_evidence(evidence)
             st.success("Demo sample loaded.")

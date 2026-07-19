@@ -90,6 +90,7 @@ The committed training features are BV-BRC `genome_feature` product-name markers
    - Script: `streamlit run streamlit_app.py`
    - Inputs: AMRFinderPlus TSV, FASTA with AMRFinderPlus when installed, BV-BRC genome ID, or demo annotated FASTA.
    - Output: tri-state antibiotic report plus Tableau-style charts and safety disclaimer.
+   - Important: raw contig FASTA without gene/product annotations cannot be converted into AMR marker features by this app unless AMRFinderPlus is installed. In that case the app returns `no_call` instead of producing misleading repeated predictions.
 
 ## Feature Output Format
 
@@ -166,6 +167,12 @@ Then open `http://localhost:8501`.
 - AMRFinderPlus TSV: upload precomputed AMRFinderPlus output.
 - BV-BRC Genome ID: fetches public genome feature annotations for demo/prototype use.
 - Demo annotated FASTA: built-in synthetic examples for quick UI testing.
+
+If every raw FASTA file appears to produce the same result, that means no AMR marker annotations were available. Use one of these paths:
+
+1. Install AMRFinderPlus and let the app run it.
+2. Run AMRFinderPlus outside the app and upload the TSV.
+3. Upload an annotated FASTA whose headers contain gene/product names.
 
 ## Repository Map
 
