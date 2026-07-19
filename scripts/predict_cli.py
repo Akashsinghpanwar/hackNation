@@ -510,5 +510,47 @@ def main() -> None:
         sys.exit(1)
 
 
+def serve() -> None:
+    """
+    Long-lived mode: load models/kmer index/feature cols ONCE, then handle one
+    JSON request per stdin line for the life of the process, writing one JSON
+    response per stdout line. Spawning a fresh interpreter (and re-importing
+    numpy/scikit-learn/lightgbm, re-unpickling 4 models) per request is what
+    was pushing a memory-constrained host (Render free tier, 512MB) into OOM —
+    this mode is called once by pythonBridge.ts and reused across requests.
+    """
+    global load_models, load_feature_cols, load_kmer_index, load_norm_stats, load_decision_policy
+
+    models = load_models()
+    feature_cols = load_feature_cols()
+    kmer_index = load_kmer_index()
+    stats = load_norm_stats()
+    policy = load_decision_policy()
+
+    load_models = lambda: models
+    load_feature_cols = lambda: feature_cols
+    load_kmer_index = lambda: kmer_index
+    load_norm_stats = lambda: stats
+    load_decision_policy = lambda: policy
+
+    sys.stdout.write(json.dumps({"ready": True}) + "\n")
+    sys.stdout.flush()
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+            result = handle(req)
+            sys.stdout.write(json.dumps(result) + "\n")
+        except Exception as exc:
+            sys.stdout.write(json.dumps({"error": f"{type(exc).__name__}: {exc}"}) + "\n")
+        sys.stdout.flush()
+
+
 if __name__ == "__main__":
-    main()
+    if "--serve" in sys.argv:
+        serve()
+    else:
+        main()

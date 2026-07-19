@@ -31,6 +31,13 @@ RUN python3 scripts/ensure_feature_columns.py
 RUN npm run build
 
 ENV NODE_ENV=production
+# LightGBM/numpy/scikit-learn each spin up their own BLAS/OpenMP thread pool by
+# default; on a memory-constrained host (e.g. Render's free 512MB tier) that
+# multiplies peak RSS per request for no real benefit at this request volume.
+ENV OMP_NUM_THREADS=1
+ENV OPENBLAS_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV NUMEXPR_NUM_THREADS=1
 # Render injects PORT at runtime; server/index.ts already reads process.env.PORT.
 EXPOSE 3000
 
