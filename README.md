@@ -1,296 +1,198 @@
 # AMRShield Sentinel
 
-**Hack-Nation Challenge 06 — Genome Firewall**
+Research Streamlit prototype for predicting antibiotic response in E. coli from genome-derived AMR marker features.
 
-Predicts antibiotic resistance in *E. coli* from annotated genome features **before** standard lab results arrive. Tri-state output: `Likely to Fail` / `Likely to Work` / `No Call`. Every prediction includes a calibrated probability, supporting gene markers, and a mandatory lab-confirmation disclaimer.
+Output is tri-state: `likely_to_fail`, `likely_to_work`, or `no_call`. Every result includes probability, confidence, evidence category, target-gate status, and the required lab-confirmation warning.
 
----
+> Research prototype only. Confirm every result with standard laboratory susceptibility testing.
 
-## Architecture Overview
+## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        DATA PIPELINE                                │
-│                                                                     │
-│  BV-BRC Public API                                                  │
-│  (92,452 AST rows / 8,725 E. coli genomes)                         │
-│          │                                                          │
-│          ▼                                                          │
-│  01_fetch_features.py  ──►  raw_features.jsonl                      │
-│  (batch AMR gene annotations, 5 keyword filters)                    │
-│          │                                                          │
-│          ▼                                                          │
-│  02_build_matrices.py  ──►  feature_matrix.csv  +  labels.csv       │
-│  (39 regex gene families → 20 useful features                       │
-│   + amr_gene_burden, genome_length_z, contigs_z)                   │
-│          │                                                          │
-│          ▼                                                          │
-│  Cluster-based split (cgmlst_hc50)                                  │
-│  Train: 6,979 genomes   Test: 1,746 genomes                        │
-└─────────────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        ML PIPELINE                                  │
-│                                                                     │
-│  03_train.py                                                        │
-│  ┌─────────────────────────────────────┐                           │
-│  │  For each antibiotic (×4):          │                           │
-│  │                                     │                           │
-│  │  genetic_group  ──► Bayesian target │                           │
-│  │  (cgMLST lineage)    encoding on    │                           │
-│  │                      train only     │                           │
-│  │                          │          │                           │
-│  │  23 numeric features  ──►│          │                           │
-│  │  + 1 encoded gg_val      │          │                           │
-│  │                          ▼          │                           │
-│  │              LightGBM (adaptive     │                           │
-│  │              complexity by n_train) │                           │
-│  │                          │          │                           │
-│  │              CalibratedClassifierCV │                           │
-│  │              (isotonic / sigmoid)   │                           │
-│  └─────────────────────────────────────┘                           │
-│          │                                                          │
-│          ▼                                                          │
-│  artifacts/models/<antibiotic>_model.pkl                           │
-└─────────────────────────────────────────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      STREAMLIT UI                                   │
-│                                                                     │
-│  Upload annotated FASTA  OR  enter BV-BRC Genome ID                │
-│          │                                                          │
-│          ▼                                                          │
-│  Gene product scan → 39-regex family classification                │
-│          │                                                          │
-│          ▼                                                          │
-│  4 × LightGBM models → P(resistant)                                │
-│          │                                                          │
-│          ▼                                                          │
-│  Tri-state decision (FAIL / WORK / NO CALL)                        │
-│  + calibrated probability bar + gene chip annotations              │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A[Assembled E. coli FASTA] --> B{AMRFinderPlus installed?}
+    B -->|yes| C[Run amrfinder -n FASTA -O Escherichia]
+    B -->|no| D[Upload precomputed AMRFinderPlus TSV]
+    C --> E[Parse AMRFinderPlus TSV]
+    D --> E
+    F[BV-BRC genome ID demo path] --> G[Fetch genome_feature products]
+    E --> H[Map genes/mutations to 20 AMR marker families]
+    G --> H
+    H --> I[Build 23 numeric model features]
+    I --> J[Target gate per antibiotic]
+    I --> K[Calibrated LightGBM models]
+    J --> L[Decision report]
+    K --> L
+    L --> M[Streamlit UI: prediction, metrics, data, safety]
 ```
 
----
+## What Is Fixed
 
-## Model Performance
-
-Evaluated on **held-out test set** (1,746 genomes, cluster-stratified — related genomes never split across train/test).
-
-| Antibiotic     | AUROC  | Balanced Acc | Resistant Recall | Susceptible Recall | No-Call Rate | Brier Score |
-|----------------|--------|-------------|-----------------|-------------------|--------------|-------------|
-| Ampicillin     | 0.948  | 93.9%       | 92.4%           | 95.4%             | 6.3%         | 0.068       |
-| Ciprofloxacin  | 0.902  | 82.4%       | 67.7%           | 97.1%             | 11.3%        | 0.079       |
-| Ceftriaxone    | 0.922  | 92.1%       | 87.3%           | 96.9%             | 5.6%         | 0.071       |
-| Tetracycline   | 0.965  | 93.2%       | 97.0%           | 89.4%             | 4.6%         | 0.058       |
-
-> Metrics computed on called predictions only (No-Call excluded from Balanced Acc / Recalls).
-
-**Decision thresholds:** P ≥ 0.72 → `LIKELY TO FAIL` | P ≤ 0.28 → `LIKELY TO WORK` | else → `NO CALL`
-
----
+- AMRFinderPlus is now the default FASTA annotation path in the Streamlit app when `amrfinder` is available on `PATH`.
+- Precomputed AMRFinderPlus TSV upload is supported, so the app still works when AMRFinderPlus is not locally installed.
+- The previous `genetic_group` predictive feature was removed to avoid lineage leakage.
+- Calibration now uses `StratifiedGroupKFold` splits based on the grouped training data.
+- PR-AUC now uses `average_precision_score`, not the previous broken trapezoid calculation.
+- Target gates are deterministic per antibiotic target family before a `likely_to_work` result is allowed.
+- The app text now matches the actual LightGBM model family and no-call policy.
 
 ## Dataset
 
-- **Source:** [BV-BRC](https://www.bv-brc.org/) public antimicrobial susceptibility testing (AST) records
-- **Species:** *Escherichia coli* (NCBI taxon 562)
-- **Scale:** 92,452 AST rows across 8,725 unique genomes and 76 antibiotics
-- **Modelled antibiotics:** Ampicillin, Ciprofloxacin, Ceftriaxone, Tetracycline
-- **Train / Test split:** Cluster-based on `cgmlst_hc50` (80/20) — prevents data leakage from related strains
+- Source: BV-BRC public AST records and genome feature annotations.
+- Species: E. coli, NCBI taxon 562.
+- Scale: 92,452 AST rows, 8,725 unique genomes, 76 antibiotics in the downloaded label table.
+- Modeled antibiotics: ampicillin, ciprofloxacin, ceftriaxone, tetracycline.
+- Train/test split: grouped 80/20 split using `cgmlst_hc50`, with 6,979 train genomes and 1,746 test genomes.
 
----
+Training is done as one binary model per antibiotic. The raw BV-BRC table has 92,452 AST rows, but each antibiotic model only uses genomes that have a resistant/susceptible label for that antibiotic after cleaning and de-duplication.
 
-## Feature Engineering
+| Antibiotic | Train genomes | Train resistant | Train susceptible | Test genomes | Test resistant | Test susceptible | Total labeled genomes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ampicillin | 5,105 | 2,933 | 2,172 | 1,392 | 729 | 663 | 6,497 |
+| Ciprofloxacin | 5,888 | 1,638 | 4,250 | 1,437 | 215 | 1,222 | 7,325 |
+| Ceftriaxone | 803 | 399 | 404 | 161 | 55 | 106 | 964 |
+| Tetracycline | 703 | 414 | 289 | 174 | 103 | 71 | 877 |
 
-### Gene Families (20 binary features after prevalence filter)
+The committed training features are BV-BRC `genome_feature` product-name markers. For a stricter AMRFinderPlus rebuild, run AMRFinderPlus over the same genome assemblies and feed the TSV through the same marker parser used by `streamlit_app.py`.
 
-| Group | Genes |
-|-------|-------|
-| β-lactamases | blaCTX-M, blaTEM, blaOXA, blaCMY, blaEC, blaAmpC, betaLactamResProtein |
-| Tetracycline | tetA, tetB, tetR |
-| Aminoglycosides | aac6Ib, aadA, aac3, aph3 |
-| Sulfonamides | sul1 |
-| Regulators / Efflux | marA, marR, marB, qacE |
-| Integrons | integraseI |
+## End-to-End Process
 
-Features with <2% or >98% prevalence dropped as near-constant.
+1. Download BV-BRC AST labels and genome metadata.
+   - Input: public BV-BRC E. coli AST records.
+   - Output: `data/bvbrc/training_dataset.csv` and metadata files.
+   - Scale used here: 92,452 AST rows across 8,725 genomes.
 
-### Engineered Features (3)
-- `amr_gene_burden` — count of distinct AMR gene families detected
-- `genome_length_z` — z-score normalised assembly length
-- `contigs_z` — z-score normalised contig count
+2. Fetch genome feature annotations.
+   - Script: `python scripts/01_fetch_features.py`
+   - Input: genome IDs from the BV-BRC dataset.
+   - Output: `data/bvbrc/raw_features.jsonl`
+   - Purpose: collect gene/product annotations used to detect AMR marker families.
 
-### Genetic Group (1 target-encoded feature)
-- `genetic_group` — cgMLST-derived lineage identifier
-- Bayesian target-encoded on train set only (smoothing=10) to prevent leakage
-- Key signal for ciprofloxacin: ST131-like lineage (group 18) is **96% ciprofloxacin resistant** across 793 genomes
-- Only used when training set ≥ 2,000 samples
+3. Build model matrices.
+   - Script: `python scripts/02_build_matrices.py`
+   - Output: `feature_matrix.csv`, `labels.csv`, `splits.json`, `feature_columns.json`, `feature_meta.json`
+   - Feature output: 20 binary AMR marker columns plus `amr_gene_burden`, `genome_length_z`, and `contigs_z`.
+   - Split policy: grouped train/test split by `cgmlst_hc50`, so related genomes do not cross train/test.
 
----
+4. Train calibrated models.
+   - Script: `python scripts/03_train.py`
+   - Model: one LightGBM classifier per antibiotic.
+   - Calibration: `CalibratedClassifierCV` with `StratifiedGroupKFold`.
+   - Leakage control: `genetic_group` is used only for grouping, not as a predictive feature.
+   - Output: `artifacts/models/<antibiotic>_model.pkl` and `artifacts/model_meta.json`.
 
-## ML Model Details
+5. Evaluate held-out test data.
+   - Script: `python scripts/04_evaluate.py`
+   - Metrics: AUROC, PR-AUC, Brier score, no-call rate, answered accuracy, balanced accuracy, resistant recall, susceptible recall.
+   - Output: `artifacts/demo_metrics.json`.
 
-**Algorithm:** LightGBM + CalibratedClassifierCV (isotonic/sigmoid)
+6. Serve Streamlit dashboard.
+   - Script: `streamlit run streamlit_app.py`
+   - Inputs: AMRFinderPlus TSV, FASTA with AMRFinderPlus when installed, BV-BRC genome ID, or demo annotated FASTA.
+   - Output: tri-state antibiotic report plus Tableau-style charts and safety disclaimer.
 
-Adaptive complexity based on training set size:
+## Feature Output Format
 
-| Training Samples | Trees | Leaves | Calibration | CV Folds |
-|-----------------|-------|--------|------------|---------|
-| ≥ 3,000         | 400   | 63     | isotonic   | 5       |
-| 1,000–2,999     | 200   | 31     | sigmoid    | 3       |
-| < 1,000         | 100   | 15     | sigmoid    | 3       |
+The model feature vector is ordered by `data/bvbrc/feature_columns.json`.
 
-Calibration ensures probabilities are well-calibrated (Brier scores 0.058–0.079).
+Current columns:
 
----
+- 20 binary AMR marker features after prevalence filtering.
+- `amr_gene_burden`: count of detected marker families.
+- `genome_length_z`: normalized genome length when available, `0.0` for uploaded inference files.
+- `contigs_z`: normalized contig count when available, `0.0` for uploaded inference files.
 
-## Repository Structure
+Runtime prediction output rows contain:
 
-```
-hackNation/
-├── scripts/
-│   ├── 01_fetch_features.py    # Fetch AMR gene annotations from BV-BRC API
-│   ├── 02_build_matrices.py    # Build feature matrix + cluster-based split
-│   ├── 03_train.py             # Train LightGBM models per antibiotic
-│   └── 04_evaluate.py          # Evaluate models, write demo_metrics.json
-│
-├── streamlit_app.py            # Dark-themed Streamlit prediction UI
-│
-├── artifacts/
-│   ├── demo_metrics.json       # Final test-set evaluation metrics
-│   ├── model_meta.json         # Training metadata per model
-│   └── models/
-│       ├── ampicillin_model.pkl
-│       ├── ciprofloxacin_model.pkl
-│       ├── ceftriaxone_model.pkl
-│       └── tetracycline_model.pkl
-│
-├── configs/
-│   └── app_config.json         # Thresholds, antibiotic targets, safety config
-│
-├── demo_samples/
-│   ├── mdr_ecoli.fasta         # Multi-drug resistant E. coli demo
-│   ├── cipro_resistant_ecoli.fasta  # Ciprofloxacin-resistant demo
-│   └── susceptible_ecoli.fasta     # Susceptible (low-resistance) demo
-│
-├── data/bvbrc/                 # (gitignored — too large)
-│   ├── training_dataset.csv    # 92,452 AST rows
-│   ├── raw_features.jsonl      # BV-BRC gene annotations
-│   ├── feature_matrix.csv      # Processed feature matrix (8,725 genomes × 24 cols)
-│   └── labels.csv              # Per-genome antibiotic labels
-│
-├── client/                     # TypeScript browser client (original prototype)
-├── server/                     # Node.js API server (original prototype)
-├── public/                     # Web UI HTML/CSS (original prototype)
-└── shared/                     # Shared TypeScript types
-```
+- `antibiotic`
+- `decision`
+- `prob`
+- `confidence`
+- `evidence_category`
+- `markers`
+- `target_status`
+- `reason_codes`
 
----
+## Model Performance
 
-## Setup
+Held-out grouped test evaluation from `artifacts/demo_metrics.json`:
 
-### Python Pipeline (LightGBM models + Streamlit UI)
+| Antibiotic | Test n | AUROC | PR-AUC | Brier | No-call | Answered accuracy | Balanced accuracy |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ampicillin | 1,392 | 0.9593 | 0.9577 | 0.0570 | 0.0338 | 0.9457 | 0.9470 |
+| Ciprofloxacin | 1,437 | 0.8631 | 0.6655 | 0.0989 | 0.2192 | 0.9278 | 0.8305 |
+| Ceftriaxone | 161 | 0.9274 | 0.8724 | 0.0682 | 0.0435 | 0.9221 | 0.9212 |
+| Tetracycline | 174 | 0.9626 | 0.9676 | 0.0601 | 0.0460 | 0.9398 | 0.9395 |
+
+Decision thresholds:
+
+- `P(resistant) >= 0.72`: `likely_to_fail`
+- `P(resistant) <= 0.28`: `likely_to_work`
+- otherwise: `no_call`
+
+## Run Locally
+
+Install Python dependencies:
 
 ```bash
-pip install lightgbm scikit-learn numpy streamlit plotly requests
+pip install -r requirements.txt
 ```
 
-### Node.js Web Prototype (original TypeScript UI)
+Optional but recommended for assembled FASTA input:
 
 ```bash
-npm install
-npm run dev       # Build and run at http://localhost:3000
+amrfinder -n sample.fna -O Escherichia -o sample.amrfinder.tsv
 ```
 
----
-
-## Running the Pipeline
-
-> **Note:** `data/` is gitignored. To reproduce from scratch, run steps 1–4. Otherwise, the pre-trained models in `artifacts/models/` are already committed and the Streamlit app works immediately.
-
-### Step 1 — Fetch gene annotations from BV-BRC (~2–4 hours for 8,725 genomes)
-
-```bash
-python scripts/01_fetch_features.py
-```
-
-Queries the BV-BRC `genome_feature` API in batches of 50 genomes. Saves `data/bvbrc/raw_features.jsonl`. Supports resume — safe to interrupt and restart.
-
-### Step 2 — Build feature matrix
+Rebuild artifacts:
 
 ```bash
 python scripts/02_build_matrices.py
-```
-
-Classifies gene product names via 39 regex patterns into gene families. Outputs `feature_matrix.csv`, `labels.csv`, `splits.json`.
-
-### Step 3 — Train models (~5–15 min)
-
-```bash
 python scripts/03_train.py
-```
-
-Trains one LightGBM + calibration model per antibiotic. Saves `artifacts/models/*.pkl`.
-
-### Step 4 — Evaluate
-
-```bash
 python scripts/04_evaluate.py
 ```
 
-Computes AUROC, Balanced Accuracy, Recalls, Brier score. Saves `artifacts/demo_metrics.json`.
-
-### Step 5 — Launch Streamlit UI
+Launch the app:
 
 ```bash
 streamlit run streamlit_app.py
 ```
 
-Opens at `http://localhost:8501`.
+Then open `http://localhost:8501`.
 
----
+## Streamlit Inputs
 
-## Streamlit UI Features
+- Assembled FASTA: runs AMRFinderPlus if `amrfinder` is installed.
+- AMRFinderPlus TSV: upload precomputed AMRFinderPlus output.
+- BV-BRC Genome ID: fetches public genome feature annotations for demo/prototype use.
+- Demo annotated FASTA: built-in synthetic examples for quick UI testing.
 
-- **Upload FASTA tab** — Upload annotated gene FASTA or use 3 built-in demo samples
-- **BV-BRC Genome ID tab** — Enter any public E. coli genome ID to query live
-- **Prediction cards** — Color-coded (red/green/grey) per antibiotic with probability bar and detected gene chips
-- **Model Metrics tab** — AUROC table + calibration plots for all 4 models
-- **Safety & Scope tab** — Explicit out-of-scope use cases and lab confirmation requirement
+## Repository Map
 
-> The FASTA upload requires **annotated** gene product headers (BV-BRC / Prokka / RAST output style, e.g. `>gene|product=blaTEM-1 beta-lactamase`). Raw assembly FASTA from sequencers (`>NODE_1_length_...`) contains no gene names — use the demo buttons or the BV-BRC ID tab instead.
+```text
+hackNation/
+  scripts/
+    01_fetch_features.py
+    02_build_matrices.py
+    03_train.py
+    04_evaluate.py
+  streamlit_app.py
+  requirements.txt
+  artifacts/
+    demo_metrics.json
+    model_meta.json
+    models/
+  data/bvbrc/
+    feature_matrix.csv
+    labels.csv
+    splits.json
+    feature_columns.json
+  demo_samples/
+  client/ server/ public/ shared/   # original TypeScript prototype, not used by Streamlit path
+```
 
----
+## Safety Scope
 
-## Safety & Scope
+In scope: defensive E. coli AMR response prediction, explainable markers, calibrated uncertainty, no-call behavior, and lab-confirmation messaging.
 
-| In scope | Out of scope |
-|----------|-------------|
-| E. coli reconstructed genomes | Other species |
-| Research decision support | Clinical prescribing |
-| Genome annotation FASTA | Raw sequencer output |
-| Known resistance mechanisms | Novel resistance mutations |
-
-**Every prediction includes:** "Research prototype only. Confirm every result with standard laboratory susceptibility testing."
-
----
-
-## Challenge Context
-
-**Hack-Nation Challenge 06 — Genome Firewall**
-
-The challenge asks: can AI predict whether an antibiotic will work for a bacterial infection **before** the 24–72 hour lab culture result? AMRShield Sentinel addresses this by:
-
-1. Extracting resistance gene families from a sequenced genome annotation
-2. Incorporating bacterial lineage (genetic group) — critical because ST131-like *E. coli* clones carry gyrA point mutations invisible to gene-name scanning
-3. Returning calibrated tri-state decisions with explicit uncertainty (No-Call zone) rather than forcing a binary guess
-
-Data source: [BV-BRC](https://www.bv-brc.org/) — USDA/NIAID-funded public pathogen genomics database.
-
----
-
-## License
-
-Research prototype. Not for clinical use. All training data sourced from public BV-BRC records.
+Out of scope: clinical prescribing, organism design, resistance optimization, unsupported species, or replacing standard AST.

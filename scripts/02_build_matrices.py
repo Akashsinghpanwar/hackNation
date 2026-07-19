@@ -109,7 +109,7 @@ def load_metadata_labels_clusters() -> tuple[
                 meta[gid] = {
                     "genome_length": row.get("genome_length", "") or "",
                     "contigs":       row.get("contigs", "") or "",
-                    "genetic_group": row.get("genetic_group", "") or "",
+                    "genetic_group": row.get("cgmlst_hc50", "") or row.get("genetic_group", "") or "",
                 }
 
             # labels

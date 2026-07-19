@@ -1,20 +1,25 @@
 """
-Train LightGBM models per antibiotic with genetic_group as a native categorical feature.
-Uses isotonic calibration for reliable probability output.
+Train one calibrated LightGBM marker model per antibiotic.
 
-Outputs: artifacts/models/<antibiotic>_model.pkl  + artifacts/model_meta.json
+The genetic relatedness group is used for grouped calibration only. It is not
+used as a predictive feature, which avoids leakage from related genomes.
+
+Outputs:
+  artifacts/models/<antibiotic>_model.pkl
+  artifacts/model_meta.json
 """
 from __future__ import annotations
 
 import csv
 import json
 import pickle
+import warnings
 from pathlib import Path
 
 import numpy as np
 from lightgbm import LGBMClassifier
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedGroupKFold
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "bvbrc"
 ARTIFACTS_DIR = Path(__file__).resolve().parents[1] / "artifacts" / "models"
@@ -22,192 +27,171 @@ ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
 
 ANTIBIOTICS = ["ampicillin", "ciprofloxacin", "ceftriaxone", "tetracycline"]
 
-# LightGBM params by dataset size
+warnings.filterwarnings(
+    "ignore",
+    message="X does not have valid feature names, but LGBMClassifier was fitted with feature names",
+)
+
+
 def get_lgbm_params(n_train: int) -> dict:
     if n_train >= 3000:
-        # Large dataset — full complexity
         return {
-            "n_estimators": 400, "learning_rate": 0.05, "num_leaves": 63,
-            "min_child_samples": 20, "subsample": 0.8, "colsample_bytree": 0.8,
-            "reg_alpha": 0.1, "reg_lambda": 0.1,
-            "class_weight": "balanced", "random_state": 42, "n_jobs": -1, "verbose": -1,
+            "n_estimators": 400,
+            "learning_rate": 0.05,
+            "num_leaves": 63,
+            "min_child_samples": 20,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "reg_alpha": 0.1,
+            "reg_lambda": 0.1,
+            "class_weight": "balanced",
+            "random_state": 42,
+            "n_jobs": -1,
+            "verbose": -1,
         }
-    elif n_train >= 1000:
-        # Medium dataset — moderate complexity
+    if n_train >= 1000:
         return {
-            "n_estimators": 200, "learning_rate": 0.05, "num_leaves": 31,
-            "min_child_samples": 15, "subsample": 0.8, "colsample_bytree": 0.8,
-            "reg_alpha": 0.5, "reg_lambda": 0.5,
-            "class_weight": "balanced", "random_state": 42, "n_jobs": -1, "verbose": -1,
+            "n_estimators": 200,
+            "learning_rate": 0.05,
+            "num_leaves": 31,
+            "min_child_samples": 15,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "reg_alpha": 0.5,
+            "reg_lambda": 0.5,
+            "class_weight": "balanced",
+            "random_state": 42,
+            "n_jobs": -1,
+            "verbose": -1,
         }
-    else:
-        # Small dataset — conservative, avoid overfitting
-        return {
-            "n_estimators": 100, "learning_rate": 0.05, "num_leaves": 15,
-            "min_child_samples": 10, "subsample": 0.8, "colsample_bytree": 0.8,
-            "reg_alpha": 1.0, "reg_lambda": 1.0,
-            "class_weight": "balanced", "random_state": 42, "n_jobs": -1, "verbose": -1,
-        }
+    return {
+        "n_estimators": 100,
+        "learning_rate": 0.05,
+        "num_leaves": 15,
+        "min_child_samples": 10,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_alpha": 1.0,
+        "reg_lambda": 1.0,
+        "class_weight": "balanced",
+        "random_state": 42,
+        "n_jobs": -1,
+        "verbose": -1,
+    }
 
 
 def load_feature_matrix(feature_cols: list[str]) -> tuple[dict[str, np.ndarray], dict[str, str]]:
-    """Returns (numeric_matrix, genetic_groups)."""
     matrix: dict[str, np.ndarray] = {}
-    gg_map: dict[str, str] = {}
-    with open(DATA_DIR / "feature_matrix.csv", newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            gid = row["genome_id"]
-            matrix[gid] = np.array([float(row.get(c, 0)) for c in feature_cols])
-            gg_map[gid] = row.get("genetic_group", "") or ""
-    return matrix, gg_map
+    group_map: dict[str, str] = {}
+    with open(DATA_DIR / "feature_matrix.csv", newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            genome_id = row["genome_id"]
+            matrix[genome_id] = np.array([float(row.get(col, 0)) for col in feature_cols])
+            group_map[genome_id] = row.get("genetic_group", "") or f"_nogroup_{genome_id}"
+    return matrix, group_map
 
 
 def load_labels() -> dict[str, dict[str, str]]:
     labels: dict[str, dict[str, str]] = {}
-    with open(DATA_DIR / "labels.csv", newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
+    with open(DATA_DIR / "labels.csv", newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
             labels[row["genome_id"]] = {ab: row.get(ab, "") for ab in ANTIBIOTICS}
     return labels
-
-
-def encode_genetic_groups(
-    train_ids: list[str],
-    all_ids: list[str],
-    gg_map: dict[str, str],
-    labels_map: dict[str, dict[str, str]],
-    antibiotic: str,
-    smoothing: float = 10.0,
-) -> dict[str, float]:
-    """
-    Target-encode genetic_group on TRAIN set only (smoothed mean resistance rate).
-    smoothing=10 means groups with <10 samples revert toward global mean.
-    Returns {group: encoded_value}.
-    """
-    group_stats: dict[str, list[int]] = {}
-    global_resist = []
-    for gid in train_ids:
-        label = labels_map.get(gid, {}).get(antibiotic, "")
-        if label not in ("resistant", "susceptible"):
-            continue
-        val = 1 if label == "resistant" else 0
-        global_resist.append(val)
-        gg = gg_map.get(gid, "") or "_unknown"
-        if gg not in group_stats:
-            group_stats[gg] = []
-        group_stats[gg].append(val)
-
-    global_mean = float(np.mean(global_resist)) if global_resist else 0.5
-
-    encoding: dict[str, float] = {}
-    for gg, vals in group_stats.items():
-        n = len(vals)
-        group_mean = float(np.mean(vals))
-        # Bayesian smoothing toward global mean
-        encoding[gg] = (n * group_mean + smoothing * global_mean) / (n + smoothing)
-
-    encoding["_unknown"] = global_mean
-    encoding["_missing"] = global_mean
-    return encoding
 
 
 def build_arrays(
     genome_ids: list[str],
     antibiotic: str,
     matrix: dict[str, np.ndarray],
-    gg_map: dict[str, str],
-    gg_encoding: dict[str, float],
+    group_map: dict[str, str],
     labels: dict[str, dict[str, str]],
-) -> tuple[np.ndarray, np.ndarray]:
-    X_rows, y_rows = [], []
-    global_mean = gg_encoding.get("_missing", 0.5)
-    for gid in genome_ids:
-        label = labels.get(gid, {}).get(antibiotic, "")
-        if label not in ("resistant", "susceptible"):
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    x_rows: list[np.ndarray] = []
+    y_rows: list[int] = []
+    groups: list[str] = []
+
+    for genome_id in genome_ids:
+        label = labels.get(genome_id, {}).get(antibiotic, "")
+        if label not in ("resistant", "susceptible") or genome_id not in matrix:
             continue
-        if gid not in matrix:
-            continue
-        gg_val = gg_encoding.get(gg_map.get(gid, "") or "_missing", global_mean)
-        feat = np.append(matrix[gid], gg_val)
-        X_rows.append(feat)
+        x_rows.append(matrix[genome_id])
         y_rows.append(1 if label == "resistant" else 0)
-    return np.array(X_rows), np.array(y_rows)
+        groups.append(group_map.get(genome_id, "") or f"_nogroup_{genome_id}")
+
+    return np.array(x_rows), np.array(y_rows), np.array(groups)
 
 
-def train_model(X_train: np.ndarray, y_train: np.ndarray) -> CalibratedClassifierCV:
-    n = len(X_train)
-    params = get_lgbm_params(n)
-    lgbm = LGBMClassifier(**params)
-    # isotonic needs enough samples per fold — use sigmoid for small datasets
-    n_splits = 5 if n >= 2000 else 3
-    method = "isotonic" if n >= 2000 else "sigmoid"
-    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
-    cal = CalibratedClassifierCV(lgbm, cv=cv, method=method)
-    cal.fit(X_train, y_train)
-    return cal
+def train_model(x_train: np.ndarray, y_train: np.ndarray, groups: np.ndarray) -> CalibratedClassifierCV:
+    n_train = len(x_train)
+    unique_groups = len(set(groups.tolist()))
+    n_splits = min(5 if n_train >= 2000 else 3, unique_groups)
+    n_splits = max(2, n_splits)
+    method = "isotonic" if n_train >= 2000 else "sigmoid"
+    model = LGBMClassifier(**get_lgbm_params(n_train))
+    splitter = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    cv_splits = list(splitter.split(x_train, y_train, groups))
+    calibrated = CalibratedClassifierCV(model, cv=cv_splits, method=method)
+    calibrated.fit(x_train, y_train)
+    return calibrated
 
 
 def main() -> None:
-    with open(DATA_DIR / "feature_columns.json", encoding="utf-8") as f:
-        feature_cols: list[str] = json.load(f)
-    with open(DATA_DIR / "splits.json", encoding="utf-8") as f:
-        splits = json.load(f)
+    with open(DATA_DIR / "feature_columns.json", encoding="utf-8") as handle:
+        feature_cols: list[str] = json.load(handle)
+    with open(DATA_DIR / "splits.json", encoding="utf-8") as handle:
+        splits = json.load(handle)
 
-    print("Loading feature matrix and labels...")
-    matrix, gg_map = load_feature_matrix(feature_cols)
+    matrix, group_map = load_feature_matrix(feature_cols)
     labels = load_labels()
     train_ids: list[str] = splits["train"]
-    print(f"  {len(feature_cols)} numeric features + 1 target-encoded genetic_group")
+
+    print("Loading feature matrix and labels...")
+    print(f"  {len(feature_cols)} numeric features")
     print(f"  Train genomes: {len(train_ids)}")
 
     meta: dict[str, dict] = {}
 
-    for ab in ANTIBIOTICS:
-        print(f"\n=== {ab} ===")
+    for antibiotic in ANTIBIOTICS:
+        print(f"\n=== {antibiotic} ===")
+        x_train, y_train, groups = build_arrays(train_ids, antibiotic, matrix, group_map, labels)
+        print(
+            f"  Train: {len(x_train)} samples, "
+            f"{int(y_train.sum())} resistant ({100 * y_train.mean():.1f}%)"
+        )
+        print(f"  Calibration groups: {len(set(groups.tolist()))}")
 
-        # Compute target encoding on train set only (avoids leakage)
-        gg_enc = encode_genetic_groups(train_ids, list(matrix.keys()), gg_map, labels, ab)
-        print(f"  Encoded {len(gg_enc)} genetic groups")
-
-        X_train, y_train = build_arrays(train_ids, ab, matrix, gg_map, gg_enc, labels)
-        print(f"  Train: {len(X_train)} samples, {y_train.sum()} resistant ({100*y_train.mean():.1f}%)")
-
-        if len(np.unique(y_train)) < 2 or len(X_train) < 20:
-            print("  SKIP")
+        if len(np.unique(y_train)) < 2 or len(x_train) < 20:
+            print("  SKIP: not enough class diversity")
             continue
 
-        # Only pass genetic_group to the model when dataset is large enough
-        # (target-encoding is noisy with <2000 samples)
-        use_gg = len(X_train) >= 2000
-        if not use_gg:
-            print("  Small dataset — dropping genetic_group feature to avoid noise")
-            # Rebuild arrays without gg_val (last column)
-            X_train = X_train[:, :-1]
-            effective_gg_enc: dict[str, float] = {}
-        else:
-            effective_gg_enc = gg_enc
-
-        model = train_model(X_train, y_train)
-
-        out_path = ARTIFACTS_DIR / f"{ab}_model.pkl"
-        with open(out_path, "wb") as f:
-            pickle.dump({
-                "model": model,
-                "feature_cols": feature_cols,
-                "gg_encoding": effective_gg_enc,
-                "use_genetic_group": use_gg,
-            }, f)
+        model = train_model(x_train, y_train, groups)
+        out_path = ARTIFACTS_DIR / f"{antibiotic}_model.pkl"
+        with open(out_path, "wb") as handle:
+            pickle.dump(
+                {
+                    "model": model,
+                    "feature_cols": feature_cols,
+                    "gg_encoding": {},
+                    "use_genetic_group": False,
+                    "model_family": "LightGBM + StratifiedGroupKFold probability calibration",
+                },
+                handle,
+            )
         print(f"  Saved: {out_path}")
 
-        meta[ab] = {
+        meta[antibiotic] = {
             "feature_cols": feature_cols,
-            "n_train": len(X_train),
+            "n_train": int(len(x_train)),
             "positive_rate": float(y_train.mean()),
-            "n_genetic_groups": len(gg_enc),
+            "n_genetic_groups": int(len(set(groups.tolist()))),
+            "calibration": "CalibratedClassifierCV with StratifiedGroupKFold",
+            "uses_genetic_group_as_feature": False,
+            "model_family": "LightGBM",
         }
 
     meta_path = ARTIFACTS_DIR.parent / "model_meta.json"
-    with open(meta_path, "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+    with open(meta_path, "w", encoding="utf-8") as handle:
+        json.dump(meta, handle, indent=2)
     print(f"\nModel meta: {meta_path}")
     print("Training complete.")
 

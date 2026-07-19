@@ -27,7 +27,10 @@
     ],
     "n_train": 5105,
     "positive_rate": 0.5745347698334966,
-    "n_genetic_groups": 1510
+    "n_genetic_groups": 2463,
+    "calibration": "CalibratedClassifierCV with StratifiedGroupKFold",
+    "uses_genetic_group_as_feature": false,
+    "model_family": "LightGBM"
   },
   "ciprofloxacin": {
     "feature_cols": [
@@ -57,7 +60,10 @@
     ],
     "n_train": 5888,
     "positive_rate": 0.2781929347826087,
-    "n_genetic_groups": 1393
+    "n_genetic_groups": 2466,
+    "calibration": "CalibratedClassifierCV with StratifiedGroupKFold",
+    "uses_genetic_group_as_feature": false,
+    "model_family": "LightGBM"
   },
   "ceftriaxone": {
     "feature_cols": [
@@ -87,7 +93,10 @@
     ],
     "n_train": 803,
     "positive_rate": 0.49688667496886674,
-    "n_genetic_groups": 314
+    "n_genetic_groups": 397,
+    "calibration": "CalibratedClassifierCV with StratifiedGroupKFold",
+    "uses_genetic_group_as_feature": false,
+    "model_family": "LightGBM"
   },
   "tetracycline": {
     "feature_cols": [
@@ -117,6 +126,9 @@
     ],
     "n_train": 703,
     "positive_rate": 0.5889046941678521,
-    "n_genetic_groups": 319
+    "n_genetic_groups": 400,
+    "calibration": "CalibratedClassifierCV with StratifiedGroupKFold",
+    "uses_genetic_group_as_feature": false,
+    "model_family": "LightGBM"
   }
 }
