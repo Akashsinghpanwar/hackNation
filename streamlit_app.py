@@ -494,18 +494,22 @@ def run_amrfinder_on_fasta(fasta_text: str) -> FeatureEvidence:
 
 def fetch_bvbrc_products(genome_id: str) -> FeatureEvidence:
     encoded_id = urllib.parse.quote(genome_id.strip())
+    # IMPORTANT: BV-BRC RQL wildcard terms must be single words. A multi-word term
+    # (e.g. "DNA gyrase") url-encodes to contain %20 and silently breaks the whole
+    # or() clause, returning almost no rows. Use single tokens only.
     product_terms = [
         "resistance",
         "lactamase",
         "efflux",
         "aminoglycoside",
         "integron",
-        "DNA gyrase",
+        "gyrase",
         "topoisomerase",
+        "quinolone",
+        "ribosomal",
         "penicillin-binding",
-        "30S ribosomal",
-        "16S ribosomal",
-        "ribosomal protein S",
+        "tetracycline",
+        "sulfonamide",
     ]
     clauses = ",".join(f"eq(product,*{urllib.parse.quote(term)}*)" for term in product_terms)
     url = (
