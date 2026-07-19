@@ -46,6 +46,30 @@ npm install
 npm run dev                          # builds TS, serves http://localhost:3000
 ```
 
+### Multimodal AI layer (OpenAI)
+
+On top of the genomic prediction, the app adds two OpenAI modalities (optional):
+
+- **Clinical narrative (text)** — `POST /api/explain` sends the structured result to a
+  chat model (`OPENAI_TEXT_MODEL`, default `gpt-4o-mini`) which explains, in plain
+  language, which detected genes drive which prediction and what a no-call means, always
+  ending with the lab-confirmation caveat.
+- **Report-card infographic (image)** — `POST /api/report-image` uses an image model
+  (`OPENAI_IMAGE_MODEL`, default `gpt-image-1`) to generate a shareable "AMR Resistance
+  Report Card" from the prediction.
+
+Both are surfaced in the Results tab ("AI Report Assistant"). Enable them by putting your
+key in a gitignored `.env` (never commit it):
+
+```
+OPENAI_API_KEY=sk-...
+OPENAI_TEXT_MODEL=gpt-4o-mini
+OPENAI_IMAGE_MODEL=gpt-image-1
+```
+
+If `OPENAI_API_KEY` is unset, the core genomic prediction still works; only the AI
+buttons are disabled (`GET /api/ai-status` reports availability).
+
 The Node server calls `python` (override with `PYTHON_BIN`) to run
 `scripts/predict_cli.py`. API surface: `GET /api/config`, `GET /api/metrics`,
 `GET /api/bvbrc/training-dashboard`, `POST /api/analyse` (FASTA/TSV),

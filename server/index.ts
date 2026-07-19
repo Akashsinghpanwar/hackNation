@@ -1,9 +1,11 @@
+import "./env.js";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { runInference } from "./pipeline/pythonBridge.js";
 import { buildMetricsPayload } from "./pipeline/metrics.js";
+import { aiConfigured, generateNarrative, generateReportImage, type AnalysisLike } from "./pipeline/openai.js";
 import { loadConfig, rootDir } from "./config.js";
 import { loadBvbrcTrainingDashboard } from "./bvbrcData.js";
 
@@ -33,11 +35,23 @@ async function readRequestJson<T>(request: IncomingMessage): Promise<T> {
 }
 
 async function serveStatic(pathName: string, response: ServerResponse): Promise<void> {
-  if (pathName === "/assets/app.js") {
-    const clientBundle = join(rootDir, "dist", "client", "app.js");
-    response.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
-    createReadStream(clientBundle).pipe(response);
-    return;
+  if (pathName.startsWith("/assets/")) {
+    const assetDir = join(rootDir, "dist", "client");
+    const assetPath = normalize(join(assetDir, pathName.replace("/assets/", "")));
+    if (!assetPath.startsWith(assetDir)) {
+      sendJson(response, 403, { error: "Forbidden" });
+      return;
+    }
+    try {
+      const fileStat = await stat(assetPath);
+      if (!fileStat.isFile()) throw new Error("Not a file");
+      response.writeHead(200, { "Content-Type": mimeTypes[extname(assetPath)] ?? "application/octet-stream" });
+      createReadStream(assetPath).pipe(response);
+      return;
+    } catch {
+      sendJson(response, 404, { error: "Not found" });
+      return;
+    }
   }
 
   const requested = pathName === "/" ? "/index.html" : pathName;
@@ -120,6 +134,41 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       }
       const result = await runInference({ mode: "bvbrc", species: body.species ?? "Escherichia coli", genome_id: body.genome_id.trim() });
       sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, 500, { error: error instanceof Error ? error.message : "Unknown error" });
+    }
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/ai-status") {
+    sendJson(response, 200, { configured: aiConfigured() });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/explain") {
+    try {
+      const body = await readRequestJson<{ result: AnalysisLike }>(request);
+      if (!body.result?.predictions) {
+        sendJson(response, 400, { error: "Run an analysis first." });
+        return;
+      }
+      const narrative = await generateNarrative(body.result);
+      sendJson(response, 200, { narrative });
+    } catch (error) {
+      sendJson(response, 500, { error: error instanceof Error ? error.message : "Unknown error" });
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/report-image") {
+    try {
+      const body = await readRequestJson<{ result: AnalysisLike }>(request);
+      if (!body.result?.predictions) {
+        sendJson(response, 400, { error: "Run an analysis first." });
+        return;
+      }
+      const image_b64 = await generateReportImage(body.result);
+      sendJson(response, 200, { image_b64 });
     } catch (error) {
       sendJson(response, 500, { error: error instanceof Error ? error.message : "Unknown error" });
     }

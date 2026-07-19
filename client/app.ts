@@ -1,4 +1,5 @@
 import type { AnalysisResult, AppConfig } from "../shared/types.js";
+import { loadStaticConfig, loadStaticMetrics, loadStaticSample, runStaticAnalysis } from "./staticFallback.js";
 
 interface MetricRow {
   antibiotic: string; auroc: number | null; pr_auc: number | null;
@@ -25,7 +26,8 @@ const state: {
   selectedFile?: { fileName: string; content: string };
   selectedTsv?: { fileName: string; content: string };
   mode: InputMode;
-} = { mode: "fasta" };
+  usingStaticApi: boolean;
+} = { mode: "fasta", usingStaticApi: false };
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -54,18 +56,27 @@ function setStatus(message: string, isError = false): void {
 }
 
 async function init(): Promise<void> {
-  state.config = await fetchJson<AppConfig>("/api/config");
+  try {
+    state.config = await fetchJson<AppConfig>("/api/config");
+  } catch {
+    state.usingStaticApi = true;
+    state.config = await loadStaticConfig();
+    $("#detectorStatus").textContent = "Static Pages demo: browser marker detector and rule-based confidence fallback";
+  }
   const species = $("#species") as HTMLSelectElement;
   species.innerHTML = `<option>${state.config.supported_species}</option><option>Unsupported species</option>`;
   $("#speciesScope").textContent = state.config.supported_species;
   $("#modelVersion").textContent = state.config.model_version;
   $("#confirmation").textContent = state.config.safety.lab_confirmation_message;
-  $("#detectorStatus").textContent = "Python inference bridge, k-mer detector, and 4 calibrated LightGBM models";
+  if (!state.usingStaticApi) {
+    $("#detectorStatus").textContent = "Python inference bridge, k-mer detector, and 4 calibrated LightGBM models";
+  }
   $("#drugList").innerHTML = state.config.antibiotics
     .map((d) => `<li>${d.name}<span>${d.target}</span></li>`)
     .join("");
   bindEvents();
   await renderMetrics();
+  await checkAiStatus();
 }
 
 function bindEvents(): void {
@@ -112,7 +123,7 @@ function bindEvents(): void {
       const sample = btn.dataset.sample;
       if (!sample) return;
       try {
-        const payload = await fetchJson<{ fileName: string; content: string }>(`/api/demo-sample/${sample}`);
+        const payload = await loadDemoSample(sample);
         state.selectedFile = payload;
         $("#fileStatus").textContent = `${payload.fileName} loaded`;
         ($("#sequencePreview") as HTMLTextAreaElement).value = payload.content;
@@ -131,6 +142,61 @@ function bindEvents(): void {
   $("#analyseButton").addEventListener("click", runFasta);
   $("#analyseTsvButton").addEventListener("click", runTsv);
   $("#analyseBvbrcButton").addEventListener("click", runBvbrc);
+  $("#btnNarrative").addEventListener("click", runNarrative);
+  $("#btnImage").addEventListener("click", runReportImage);
+}
+
+async function checkAiStatus(): Promise<void> {
+  try {
+    const { configured } = await fetchJson<{ configured: boolean }>("/api/ai-status");
+    $("#aiStatus").textContent = configured ? "OpenAI connected" : "set OPENAI_API_KEY in .env";
+    ($("#btnNarrative") as HTMLButtonElement).disabled = !configured;
+    ($("#btnImage") as HTMLButtonElement).disabled = !configured;
+  } catch {
+    $("#aiStatus").textContent = "AI status unavailable";
+  }
+}
+
+async function runNarrative(): Promise<void> {
+  if (!state.result) {
+    setStatus("Run an analysis first, then generate the summary.", true);
+    return;
+  }
+  const box = $("#aiNarrative");
+  box.innerHTML = `<p class="hint">Generating clinical summary with GPT...</p>`;
+  try {
+    const { narrative } = await fetchJson<{ narrative: string }>("/api/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ result: state.result })
+    });
+    const html = narrative
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .split(/\n{2,}/).map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = `<p class="hint error">${e instanceof Error ? e.message : "Summary failed."}</p>`;
+  }
+}
+
+async function runReportImage(): Promise<void> {
+  if (!state.result) {
+    setStatus("Run an analysis first, then generate the report card.", true);
+    return;
+  }
+  const box = $("#aiImage");
+  box.innerHTML = `<p class="hint">Generating report card with gpt-image (this can take ~20s)...</p>`;
+  try {
+    const { image_b64 } = await fetchJson<{ image_b64: string }>("/api/report-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ result: state.result })
+    });
+    box.innerHTML = `<img alt="AMR report card" src="data:image/png;base64,${image_b64}"><a class="dl" download="amr_report_card.png" href="data:image/png;base64,${image_b64}">Download PNG</a>`;
+  } catch (e) {
+    box.innerHTML = `<p class="hint error">${e instanceof Error ? e.message : "Image failed."}</p>`;
+  }
 }
 
 async function runFasta(): Promise<void> {
@@ -146,10 +212,11 @@ async function runFasta(): Promise<void> {
   setStatus("Analyzing FASTA through feature extraction and calibrated models...");
   try {
     const species = ($("#species") as HTMLSelectElement).value;
-    const result = await fetchJson<AnalysisResult>("/api/analyse", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ species, fileName: selected.fileName, content: selected.content })
+    const result = await analyseWithFallback({
+      mode: "fasta",
+      species,
+      fileName: selected.fileName,
+      content: selected.content
     });
     showResult(result);
   } catch (e) {
@@ -170,10 +237,11 @@ async function runTsv(): Promise<void> {
   setStatus("Parsing AMRFinderPlus TSV and running calibrated models...");
   try {
     const species = ($("#species") as HTMLSelectElement).value;
-    const result = await fetchJson<AnalysisResult>("/api/analyse", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "tsv", species, fileName: selected.fileName, content: selected.content })
+    const result = await analyseWithFallback({
+      mode: "tsv",
+      species,
+      fileName: selected.fileName,
+      content: selected.content
     });
     showResult(result);
   } catch (e) {
@@ -189,14 +257,60 @@ async function runBvbrc(): Promise<void> {
   }
   setStatus(`Fetching BV-BRC ${gid} and running model inference...`);
   try {
-    const result = await fetchJson<AnalysisResult>("/api/analyse-bvbrc", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ genome_id: gid })
+    const result = await analyseWithFallback({
+      mode: "bvbrc",
+      species: ($("#species") as HTMLSelectElement).value,
+      genome_id: gid
     });
     showResult(result);
   } catch (e) {
     setStatus(e instanceof Error ? e.message : "BV-BRC analysis failed.", true);
+  }
+}
+
+async function loadDemoSample(sample: string): Promise<{ fileName: string; content: string }> {
+  try {
+    return await fetchJson<{ fileName: string; content: string }>(`/api/demo-sample/${sample}`);
+  } catch {
+    return loadStaticSample(sample);
+  }
+}
+
+async function analyseWithFallback(request: {
+  mode: InputMode;
+  species: string;
+  fileName?: string;
+  content?: string;
+  genome_id?: string;
+}): Promise<AnalysisResult> {
+  const config = state.config ?? await loadStaticConfig();
+  if (request.mode === "bvbrc") {
+    try {
+      return await fetchJson<AnalysisResult>("/api/analyse-bvbrc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ species: request.species, genome_id: request.genome_id })
+      });
+    } catch (error) {
+      if (!state.usingStaticApi) throw error;
+      return runStaticAnalysis({ mode: "bvbrc", species: request.species, genome_id: request.genome_id }, config);
+    }
+  }
+
+  try {
+    return await fetchJson<AnalysisResult>("/api/analyse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
+    });
+  } catch (error) {
+    if (!state.usingStaticApi) throw error;
+    return runStaticAnalysis({
+      mode: request.mode === "tsv" ? "tsv" : "fasta",
+      species: request.species,
+      fileName: request.fileName,
+      content: request.content
+    }, config);
   }
 }
 
@@ -299,7 +413,11 @@ async function renderMetrics(): Promise<void> {
   try {
     payload = await fetchJson<MetricsPayload>("/api/metrics");
   } catch {
-    return;
+    try {
+      payload = await loadStaticMetrics() as MetricsPayload;
+    } catch {
+      return;
+    }
   }
 
   $("#metricKpis").innerHTML = payload.metrics
