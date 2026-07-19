@@ -832,6 +832,12 @@ def render_source_details(evidence: FeatureEvidence) -> None:
     st.write(f"Detected AMR feature families: `{len(evidence.genes)}`")
     if getattr(evidence, "annotation_warning", ""):
         st.warning(evidence.annotation_warning)
+        st.info("The ML model is loaded, but raw DNA FASTA must be converted into AMR marker features before prediction.")
+        st.code(
+            "amrfinder -n your_genome.fna -O Escherichia -o your_genome.amrfinder.tsv\n"
+            "# Then upload your_genome.amrfinder.tsv in the AMRFinderPlus TSV tab.",
+            language="bash",
+        )
     if evidence.genes:
         st.markdown(" ".join(f'<span class="chip">{gene}</span>' for gene in sorted(evidence.genes)), unsafe_allow_html=True)
     st.write(f"Detected target families: `{', '.join(sorted(evidence.targets)) or 'none from annotations'}`")
@@ -978,6 +984,22 @@ def render_decision_table(predictions: list[dict]) -> None:
 def render_prediction_dashboard(evidence: FeatureEvidence, models: dict, feature_cols: list[str]) -> None:
     predictions = predict(evidence, models, feature_cols)
     render_prediction_overview(predictions, evidence)
+    if getattr(evidence, "requires_annotation", False):
+        st.markdown(
+            """
+<div class="panel">
+  <h3>Prediction blocked: annotation required</h3>
+  <p class="muted">This uploaded FASTA contains sequence bases, but no detected gene/product names.
+  Upload AMRFinderPlus TSV or install AMRFinderPlus so the app can extract AMR marker features.</p>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+        render_decision_table(predictions)
+        render_source_details(evidence)
+        st.markdown(f'<div class="warning">{DISCLAIMER}</div>', unsafe_allow_html=True)
+        return
+
     left, right = st.columns([1.12, 0.88])
     with left:
         st.markdown('<div class="panel">', unsafe_allow_html=True)
