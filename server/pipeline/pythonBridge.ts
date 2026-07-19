@@ -1,10 +1,9 @@
-import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { rootDir } from "../config.js";
 
 const pythonBin = process.env.PYTHON_BIN ?? (process.platform === "win32" ? "python" : "python3");
 const cliPath = join(rootDir, "scripts", "predict_cli.py");
-const REQUEST_TIMEOUT_MS = 90_000;
 
 export interface InferenceRequest {
   mode: "fasta" | "tsv" | "bvbrc";
@@ -14,103 +13,61 @@ export interface InferenceRequest {
   genome_id?: string;
 }
 
-interface PendingRequest {
-  resolve: (value: Record<string, unknown>) => void;
-  reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
-}
-
-// One long-lived Python process (models/numpy/sklearn loaded once) instead of
-// spawning + re-importing everything per request — the latter was pushing
-// memory-constrained hosts (Render free tier, 512MB) into OOM on every call.
-let child: ChildProcessWithoutNullStreams | null = null;
-let stdoutBuffer = "";
-const queue: PendingRequest[] = [];
-
-function ensureChild(): ChildProcessWithoutNullStreams {
-  if (child) return child;
-
-  const proc = spawn(pythonBin, [cliPath, "--serve"], { cwd: rootDir });
-  child = proc;
-  stdoutBuffer = "";
-
-  proc.stdout.on("data", (chunk: Buffer) => {
-    stdoutBuffer += chunk.toString("utf8");
-    let newlineIndex: number;
-    while ((newlineIndex = stdoutBuffer.indexOf("\n")) !== -1) {
-      const line = stdoutBuffer.slice(0, newlineIndex).trim();
-      stdoutBuffer = stdoutBuffer.slice(newlineIndex + 1);
-      if (!line) continue;
-
-      let parsed: Record<string, unknown> | undefined;
-      try {
-        parsed = JSON.parse(line) as Record<string, unknown>;
-      } catch {
-        continue; // ignore stray non-JSON output (e.g. library warnings that slipped through)
-      }
-      if (parsed.ready === true) continue; // startup handshake line, not a response
-
-      const pending = queue.shift();
-      if (!pending) continue;
-      clearTimeout(pending.timer);
-      if (typeof parsed.error === "string") {
-        pending.reject(new Error(parsed.error));
-      } else {
-        pending.resolve(parsed);
-      }
-    }
-  });
-
-  let stderrTail = "";
-  proc.stderr.on("data", (chunk: Buffer) => {
-    stderrTail = (stderrTail + chunk.toString("utf8")).slice(-4000);
-  });
-
-  // Without this, a write to a dead child's stdin (EPIPE) is an unhandled
-  // 'error' event on the stream and crashes the entire Node process, taking
-  // every other in-flight request down with it. onDown() below still runs via
-  // the child's own 'close' event, so this handler only needs to swallow the
-  // stream error itself.
-  proc.stdin.on("error", () => {});
-
-  const onDown = (reason: string) => {
-    child = null;
-    while (queue.length) {
-      const pending = queue.shift()!;
-      clearTimeout(pending.timer);
-      pending.reject(new Error(`Python inference process ${reason}${stderrTail ? `: ${stderrTail}` : ""}`));
-    }
-  };
-  proc.on("error", (error) => onDown(`failed to start (${error.message})`));
-  proc.on("close", (code) => onDown(`exited with code ${code}`));
-
-  return proc;
-}
-
 /**
- * Send one request to the persistent Python inference process and resolve with
- * its JSON reply. Requests are queued and answered strictly in order, matching
- * the child's one-line-in/one-line-out stdin/stdout protocol (scripts/predict_cli.py --serve).
+ * Run the standalone Python inference CLI (real LightGBM models + k-mer detector
+ * + BV-BRC fetch) by writing one JSON request to stdin and reading one JSON reply.
+ *
+ * Deliberately a fresh process per request, not a reused/persistent one: on a
+ * memory-constrained host (Render free tier, 512MB) a long-lived Python process
+ * settles at ~400-470MB resident after its first request (numpy/scikit-learn/
+ * lightgbm import + the k-mer reference index) and stays there — a few requests
+ * in a row creep the container to its memory ceiling and it hangs. A fresh
+ * process pays the import cost again (~5-10s) but reliably returns to near-zero
+ * baseline once it exits, so sequential requests don't accumulate toward OOM.
  */
 export function runInference(request: InferenceRequest): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const proc = ensureChild();
+    const child = spawn(pythonBin, [cliPath], { cwd: rootDir });
+    let stdout = "";
+    let stderr = "";
 
     const timer = setTimeout(() => {
-      const idx = queue.findIndex((p) => p.resolve === resolve);
-      if (idx !== -1) queue.splice(idx, 1);
+      child.kill();
       reject(new Error("Inference timed out after 90s."));
-    }, REQUEST_TIMEOUT_MS);
+    }, 90_000);
 
-    queue.push({ resolve, reject, timer });
+    child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
 
-    proc.stdin.write(JSON.stringify(request) + "\n", (error) => {
-      if (error) {
-        const idx = queue.findIndex((p) => p.resolve === resolve);
-        if (idx !== -1) queue.splice(idx, 1);
-        clearTimeout(timer);
-        reject(new Error(`Failed to write to Python process: ${error.message}`));
-      }
+    // Without this, writing to a child that already died (e.g. OOM-killed) is
+    // an unhandled EPIPE on the stream and crashes the whole Node process.
+    child.stdin.on("error", () => {});
+
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      reject(new Error(`Failed to launch Python (${pythonBin}): ${error.message}`));
     });
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      let parsed: Record<string, unknown> | undefined;
+      try {
+        parsed = JSON.parse(stdout) as Record<string, unknown>;
+      } catch {
+        parsed = undefined;
+      }
+      if (parsed && typeof parsed.error === "string") {
+        reject(new Error(parsed.error));
+        return;
+      }
+      if (code !== 0 || !parsed) {
+        reject(new Error(stderr.trim() || `Inference exited with code ${code}`));
+        return;
+      }
+      resolve(parsed);
+    });
+
+    child.stdin.write(JSON.stringify(request));
+    child.stdin.end();
   });
 }

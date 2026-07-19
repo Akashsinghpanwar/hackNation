@@ -13,7 +13,9 @@ Output: JSON matching shared/types.ts AnalysisResult (+ detected_genes, source, 
 """
 from __future__ import annotations
 
+import array
 import csv
+import gc
 import hashlib
 import json
 import os
@@ -162,8 +164,14 @@ def fasta_headers_and_stats(text: str) -> tuple[list[str], int, int, float]:
 
 
 # ---------- k-mer detector ----------
-def genome_kmer_set(text: str, k: int) -> set[int]:
-    codes: set[int] = set()
+def genome_kmer_set(text: str, k: int) -> np.ndarray:
+    # A pure-Python set[int] here held one boxed PyLong (~28B) plus a hash-table
+    # slot (~12-16B) per k-mer — a 5Mb genome produces several million of them,
+    # ~200MB+ that CPython rarely hands back to the OS. array.array is a compact
+    # C-level int64 buffer with no per-element object overhead during the scan;
+    # the final numpy conversion + np.unique gives a sorted, deduped 8B/entry
+    # array instead, and is released for real once the request finishes.
+    codes = array.array("q")
     mask = (1 << (2 * k)) - 1
     top = 2 * (k - 1)
     for block in re.split(r"^>.*$", text, flags=re.MULTILINE):
@@ -178,8 +186,23 @@ def genome_kmer_set(text: str, k: int) -> set[int]:
             rev = (rev >> 2) | ((3 - c) << top)
             valid += 1
             if valid >= k:
-                codes.add(fwd if fwd <= rev else rev)
-    return codes
+                codes.append(fwd if fwd <= rev else rev)
+    if not codes:
+        return np.empty(0, dtype=np.int64)
+    return np.unique(np.frombuffer(codes, dtype=np.int64))
+
+
+def _contains(sorted_query: np.ndarray, values: np.ndarray) -> np.ndarray:
+    # query is sorted once per request (np.unique in genome_kmer_set). Reusing
+    # np.isin() here would re-sort/re-scan the multi-million-element query array
+    # on every one of the ~9,700 reference-allele lookups below — a >9000x
+    # redundant cost that turned a few-second scan into a multi-minute hang.
+    # searchsorted against the pre-sorted array is O(log n) per lookup instead.
+    if sorted_query.size == 0:
+        return np.zeros(values.shape, dtype=bool)
+    idx = np.searchsorted(sorted_query, values)
+    idx = np.clip(idx, 0, sorted_query.size - 1)
+    return sorted_query[idx] == values
 
 
 def detect_genes_from_dna(text: str) -> dict[str, float]:
@@ -188,14 +211,15 @@ def detect_genes_from_dna(text: str) -> dict[str, float]:
         return {}
     k = int(index["k"])
     families: dict[str, list[list[int]]] = index["families"]
-    query = genome_kmer_set(text, k)
+    query = genome_kmer_set(text, k)  # sorted, deduped int64 array
     detected: dict[str, float] = {}
     for family, sketches in families.items():
         best = 0.0
         for sk in sketches:
             if not sk:
                 continue
-            present = sum(1 for code in sk if code in query)
+            sk_arr = np.asarray(sk, dtype=np.int64)
+            present = int(_contains(query, sk_arr).sum())
             ratio = present / len(sk)
             if ratio > best:
                 best = ratio
@@ -547,6 +571,17 @@ def serve() -> None:
         except Exception as exc:
             sys.stdout.write(json.dumps({"error": f"{type(exc).__name__}: {exc}"}) + "\n")
         sys.stdout.flush()
+
+        # Each raw-FASTA request briefly allocates several hundred MB (k-mer
+        # scan buffers); CPython's allocator doesn't reliably hand that back to
+        # the OS on its own in a long-lived process. Force it, or RSS ratchets
+        # upward across requests until the host OOM-kills the container.
+        gc.collect()
+        try:
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:
+            pass  # not on glibc/Linux (e.g. local Windows dev) — no-op
 
 
 if __name__ == "__main__":
