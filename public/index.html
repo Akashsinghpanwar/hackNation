@@ -287,6 +287,17 @@
         </section>
       </main>
     </div>
+
+    <div class="loader-overlay" id="loaderOverlay" hidden>
+      <div class="loader-box">
+        <span class="eyebrow">Running pipeline</span>
+        <h2 id="loaderTitle">Analyzing genome...</h2>
+        <div class="wf-progress"><div class="wf-progress-fill" id="wfProgressFill"></div></div>
+        <div class="wf" id="wfTrack"></div>
+        <p class="loader-caption" id="loaderCaption">Starting...</p>
+      </div>
+    </div>
+
     <script type="module" src="assets/app.js"></script>
   </body>
 </html>

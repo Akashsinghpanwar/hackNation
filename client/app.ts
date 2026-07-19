@@ -75,8 +75,116 @@ async function init(): Promise<void> {
     .map((d) => `<li>${d.name}<span>${d.target}</span></li>`)
     .join("");
   bindEvents();
+  renderWorkflow();
   await renderMetrics();
   await checkAiStatus();
+}
+
+// ---------- Workflow animation ----------
+interface WfStep { icon: string; title: string; what: string; why: string; }
+const WF_STEPS: WfStep[] = [
+  {
+    icon: "🧬", title: "Genome Intake",
+    what: "Accept a genome as annotated FASTA, an AMRFinderPlus TSV, or a live BV-BRC genome ID.",
+    why: "Sequence is available days before a culture-based susceptibility result — that head start is the entire point of the tool."
+  },
+  {
+    icon: "🧪", title: "Quality Control",
+    what: "Count bases and contigs, measure the ambiguous-base fraction, and compute a SHA-256 fingerprint of the input.",
+    why: "Low-quality input silently corrupts predictions; the hash makes every run reproducible and auditable."
+  },
+  {
+    icon: "🔍", title: "Marker Detection",
+    what: "Scan for known AMR genes using a MinHash 21-mer containment index against the NCBI AMR reference (or parse AMRFinder hits directly).",
+    why: "Alignment-free k-mer matching finds resistance genes fast, even on large raw assemblies with no annotation."
+  },
+  {
+    icon: "📊", title: "Feature Extraction",
+    what: "Turn detected genes and gene families into the numeric feature vector each drug model expects.",
+    why: "The models reason over structured presence/absence features — not raw text — so this step is the bridge from biology to ML."
+  },
+  {
+    icon: "🌲", title: "LightGBM Inference",
+    what: "Run four per-drug gradient-boosted models for ampicillin, ciprofloxacin, ceftriaxone, and tetracycline to estimate P(resistant).",
+    why: "Learned gene-interaction patterns beat single-gene rules, especially for partial or novel marker combinations."
+  },
+  {
+    icon: "🎯", title: "Calibration + Target Gate",
+    what: "Pass raw scores through CalibratedClassifierCV, then verify the drug's molecular target is actually present.",
+    why: "Calibrated probabilities can be read as real risk; the target gate blocks biologically implausible calls."
+  },
+  {
+    icon: "⚖️", title: "Confidence Engine",
+    what: "A pluggable engine (threshold or entropy) maps probability to Likely-to-fail / Likely-to-work / No-call.",
+    why: "When evidence is weak or conflicting the system abstains instead of guessing — safety over coverage."
+  },
+  {
+    icon: "🗣️", title: "Report + Multimodal",
+    what: "Render the dashboard, then generate a GPT clinical summary and optional text-to-speech voice.",
+    why: "A prediction only helps if a clinician or student can read, hear, and act on it — always with a lab-confirmation caveat."
+  }
+];
+
+let wfTimer: number | null = null;
+let wfIndex = -1;
+
+function renderWorkflow(): void {
+  const track = document.querySelector<HTMLElement>("#wfTrack");
+  if (!track) return;
+  track.innerHTML = WF_STEPS.map((s, i) => `
+    ${i > 0 ? `<div class="wf-link" data-link="${i}"><span class="wf-pulse"></span></div>` : ""}
+    <div class="wf-node" data-step="${i}">
+      <div class="wf-dot">${s.icon}</div>
+      <div class="wf-label">${s.title}</div>
+    </div>`).join("");
+}
+
+function wfStepShow(i: number): void {
+  wfIndex = i;
+  document.querySelectorAll<HTMLElement>(".wf-node").forEach((n, idx) => {
+    n.classList.toggle("active", idx === i);
+    n.classList.toggle("done", idx < i);
+  });
+  document.querySelectorAll<HTMLElement>(".wf-link").forEach((l) => {
+    l.classList.toggle("fill", Number(l.dataset.link) <= i);
+  });
+  const s = WF_STEPS[i];
+  if (!s) return;
+  $("#loaderCaption").textContent = `${s.title} — ${s.what}`;
+  ($("#wfProgressFill") as HTMLElement).style.width = `${((i + 1) / WF_STEPS.length) * 100}%`;
+}
+
+function startLoader(title: string): void {
+  if (wfTimer !== null) window.clearTimeout(wfTimer);
+  $("#loaderTitle").textContent = title;
+  wfIndex = -1;
+  document.querySelectorAll<HTMLElement>(".wf-node").forEach((n) => n.classList.remove("active", "done"));
+  document.querySelectorAll<HTMLElement>(".wf-link").forEach((l) => l.classList.remove("fill"));
+  ($("#wfProgressFill") as HTMLElement).style.width = "0%";
+  $("#loaderCaption").textContent = "Starting...";
+  ($("#loaderOverlay") as HTMLElement).hidden = false;
+  document.body.style.overflow = "hidden";
+  const advance = (): void => {
+    if (wfIndex >= WF_STEPS.length - 1) { wfTimer = null; return; }
+    wfStepShow(wfIndex + 1);
+    wfTimer = window.setTimeout(advance, 780);
+  };
+  advance();
+}
+
+function finishLoader(): void {
+  if (wfTimer !== null) { window.clearTimeout(wfTimer); wfTimer = null; }
+  document.querySelectorAll<HTMLElement>(".wf-node").forEach((n) => {
+    n.classList.remove("active");
+    n.classList.add("done");
+  });
+  document.querySelectorAll<HTMLElement>(".wf-link").forEach((l) => l.classList.add("fill"));
+  ($("#wfProgressFill") as HTMLElement).style.width = "100%";
+  $("#loaderCaption").textContent = "Pipeline complete.";
+  window.setTimeout(() => {
+    ($("#loaderOverlay") as HTMLElement).hidden = true;
+    document.body.style.overflow = "";
+  }, 550);
 }
 
 function bindEvents(): void {
@@ -221,6 +329,7 @@ async function runFasta(): Promise<void> {
     return;
   }
   setStatus("Analyzing FASTA through feature extraction and calibrated models...");
+  startLoader("Analyzing genome (FASTA)...");
   try {
     const species = ($("#species") as HTMLSelectElement).value;
     const result = await analyseWithFallback({
@@ -232,6 +341,8 @@ async function runFasta(): Promise<void> {
     showResult(result);
   } catch (e) {
     setStatus(e instanceof Error ? e.message : "Analysis failed.", true);
+  } finally {
+    finishLoader();
   }
 }
 
@@ -246,6 +357,7 @@ async function runTsv(): Promise<void> {
     return;
   }
   setStatus("Parsing AMRFinderPlus TSV and running calibrated models...");
+  startLoader("Analyzing AMRFinder TSV...");
   try {
     const species = ($("#species") as HTMLSelectElement).value;
     const result = await analyseWithFallback({
@@ -257,6 +369,8 @@ async function runTsv(): Promise<void> {
     showResult(result);
   } catch (e) {
     setStatus(e instanceof Error ? e.message : "TSV analysis failed.", true);
+  } finally {
+    finishLoader();
   }
 }
 
@@ -267,6 +381,7 @@ async function runBvbrc(): Promise<void> {
     return;
   }
   setStatus(`Fetching BV-BRC ${gid} and running model inference...`);
+  startLoader(`Fetching BV-BRC ${gid}...`);
   try {
     const result = await analyseWithFallback({
       mode: "bvbrc",
@@ -276,6 +391,8 @@ async function runBvbrc(): Promise<void> {
     showResult(result);
   } catch (e) {
     setStatus(e instanceof Error ? e.message : "BV-BRC analysis failed.", true);
+  } finally {
+    finishLoader();
   }
 }
 
