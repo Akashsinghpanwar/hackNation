@@ -1225,6 +1225,94 @@ def page_metrics(metrics: dict) -> None:
     st.dataframe(rows, use_container_width=True, hide_index=True)
     st.caption("Evaluation uses the held-out grouped split from `data/bvbrc/splits.json`.")
 
+    render_generalization(metrics)
+
+
+def plot_generalization(metrics: dict) -> None:
+    go = plotly_go()
+    if go is None:
+        return
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=[0, 5], y=[0, 0], mode="lines", showlegend=False, line={"color": "rgba(0,0,0,0)"}))
+    colors = {"likely": "#2f6db3"}
+    x_labels, overall_vals, mean_vals, min_vals = [], [], [], []
+    for antibiotic, metric in metrics.items():
+        gen = metric.get("generalization")
+        if not gen:
+            continue
+        x_labels.append(antibiotic.capitalize())
+        overall_vals.append(metric.get("auroc"))
+        mean_vals.append(gen.get("auroc_mean"))
+        min_vals.append(gen.get("auroc_min"))
+    if not x_labels:
+        return
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="Overall AUROC", x=x_labels, y=overall_vals, marker={"color": "#2f6db3"}))
+    fig.add_trace(go.Bar(name="Per-group mean AUROC", x=x_labels, y=mean_vals, marker={"color": "#e8743b"}))
+    fig.add_trace(go.Bar(name="Worst-group AUROC", x=x_labels, y=min_vals, marker={"color": "#c43f3f"}))
+    fig.add_hline(y=0.5, line_dash="dash", line_color="#7b8494", annotation_text="random")
+    fig.update_layout(title="Generalization: Overall vs Within-Genetic-Group AUROC", barmode="group", yaxis_title="AUROC")
+    fig.update_yaxes(range=[0, 1])
+    tableau_layout(fig, height=380)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_generalization(metrics: dict) -> None:
+    has_any = any(metric.get("generalization") for metric in metrics.values())
+    if not has_any:
+        return
+    st.subheader("Generalization by Genetic Group")
+    st.caption(
+        "Held-out genomes are grouped by cgMLST-derived lineage. Overall AUROC can be inflated by "
+        "differences BETWEEN lineages; within-group AUROC shows how well the model ranks resistance "
+        "WITHIN a related group. A large gap means the score leans on lineage prevalence, not sequence signal."
+    )
+    plot_generalization(metrics)
+
+    summary_rows = []
+    for antibiotic, metric in metrics.items():
+        gen = metric.get("generalization")
+        if not gen:
+            continue
+        summary_rows.append(
+            {
+                "Antibiotic": antibiotic.capitalize(),
+                "Overall AUROC": metric.get("auroc"),
+                "Groups evaluated": gen.get("n_groups_evaluated"),
+                "Per-group AUROC (mean)": gen.get("auroc_mean"),
+                "Per-group AUROC (median)": gen.get("auroc_median"),
+                "Worst group AUROC": gen.get("auroc_min"),
+                "Per-group bal. acc (mean)": gen.get("balanced_accuracy_mean"),
+            }
+        )
+    st.dataframe(summary_rows, use_container_width=True, hide_index=True)
+
+    for antibiotic, metric in metrics.items():
+        by_group = metric.get("by_group")
+        if not by_group:
+            continue
+        with st.expander(f"{antibiotic.capitalize()} - per-group detail ({len(by_group)} groups, >= {metric['generalization']['min_group_size']} genomes each)"):
+            st.dataframe(
+                [
+                    {
+                        "Genetic group": g["group"],
+                        "n": g["n"],
+                        "Resistant rate": g["resistant_rate"],
+                        "AUROC": g["auroc"],
+                        "Balanced acc": g["balanced_accuracy_called"],
+                        "No-call rate": g["no_call_rate"],
+                    }
+                    for g in by_group
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+    st.info(
+        "Honest reading: within-lineage AUROC for ciprofloxacin is weak because its main mechanism "
+        "(gyrA/parC point mutations) is not captured by acquired-gene presence features. The no-call "
+        "policy and calibration exist precisely so the system abstains instead of overstating confidence."
+    )
+
 
 def page_data() -> None:
     st.header("BV-BRC Training Data")

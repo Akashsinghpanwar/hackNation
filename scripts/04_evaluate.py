@@ -24,6 +24,7 @@ MODELS_DIR = ARTIFACTS_DIR / "models"
 ANTIBIOTICS = ["ampicillin", "ciprofloxacin", "ceftriaxone", "tetracycline"]
 FAIL_THRESHOLD = 0.72
 WORK_THRESHOLD = 0.28
+MIN_GROUP_SAMPLES = 15  # min labeled test genomes for a per-group generalization report
 
 warnings.filterwarnings(
     "ignore",
@@ -37,6 +38,66 @@ def load_labels() -> dict[str, dict[str, str]]:
         for row in csv.DictReader(handle):
             labels[row["genome_id"]] = {ab: row.get(ab, "") for ab in ANTIBIOTICS}
     return labels
+
+
+def decisions_from_probs(probs: np.ndarray) -> np.ndarray:
+    return np.array(
+        [
+            "likely_to_fail"
+            if prob >= FAIL_THRESHOLD
+            else ("likely_to_work" if prob <= WORK_THRESHOLD else "no_call")
+            for prob in probs
+        ]
+    )
+
+
+def group_generalization(
+    y_test: np.ndarray, probs: np.ndarray, groups: np.ndarray
+) -> tuple[list[dict], dict | None]:
+    """Per-genetic-group metrics on held-out genomes (generalization to related lineages)."""
+    per_group: list[dict] = []
+    for group in sorted(set(groups.tolist())):
+        mask = groups == group
+        if mask.sum() < MIN_GROUP_SAMPLES:
+            continue
+        y_g = y_test[mask]
+        p_g = probs[mask]
+        d_g = decisions_from_probs(p_g)
+        called = d_g != "no_call"
+        auroc = (
+            float(roc_auc_score(y_g, p_g)) if len(np.unique(y_g)) > 1 else None
+        )
+        if called.sum() > 1 and len(np.unique(y_g[called])) > 1:
+            y_true = y_g[called]
+            y_pred = np.array([1 if d == "likely_to_fail" else 0 for d in d_g[called]])
+            bal_acc = float(balanced_accuracy_score(y_true, y_pred))
+        else:
+            bal_acc = None
+        per_group.append(
+            {
+                "group": str(group),
+                "n": int(mask.sum()),
+                "resistant_rate": round(float(y_g.mean()), 4),
+                "auroc": round(auroc, 4) if auroc is not None else None,
+                "balanced_accuracy_called": round(bal_acc, 4) if bal_acc is not None else None,
+                "no_call_rate": round(float((~called).mean()), 4),
+            }
+        )
+
+    aurocs = [g["auroc"] for g in per_group if g["auroc"] is not None]
+    baccs = [g["balanced_accuracy_called"] for g in per_group if g["balanced_accuracy_called"] is not None]
+    summary = None
+    if per_group:
+        summary = {
+            "n_groups_evaluated": len(per_group),
+            "min_group_size": MIN_GROUP_SAMPLES,
+            "auroc_mean": round(float(np.mean(aurocs)), 4) if aurocs else None,
+            "auroc_median": round(float(np.median(aurocs)), 4) if aurocs else None,
+            "auroc_min": round(float(np.min(aurocs)), 4) if aurocs else None,
+            "balanced_accuracy_mean": round(float(np.mean(baccs)), 4) if baccs else None,
+            "balanced_accuracy_min": round(float(np.min(baccs)), 4) if baccs else None,
+        }
+    return per_group, summary
 
 
 def main() -> None:
@@ -59,6 +120,7 @@ def main() -> None:
 
         x_rows: list[list[float]] = []
         y_rows: list[int] = []
+        group_rows: list[str] = []
         with open(DATA_DIR / "feature_matrix.csv", newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
                 genome_id = row["genome_id"]
@@ -69,6 +131,7 @@ def main() -> None:
                     continue
                 x_rows.append([float(row.get(col, 0)) for col in feature_cols])
                 y_rows.append(1 if label == "resistant" else 0)
+                group_rows.append(row.get("genetic_group", "") or "unknown")
 
         if len(y_rows) < 5:
             print(f"{antibiotic}: too few test samples")
@@ -76,15 +139,9 @@ def main() -> None:
 
         x_test = np.array(x_rows)
         y_test = np.array(y_rows)
+        groups = np.array(group_rows)
         probs = model.predict_proba(x_test)[:, 1]
-        decisions = np.array(
-            [
-                "likely_to_fail"
-                if prob >= FAIL_THRESHOLD
-                else ("likely_to_work" if prob <= WORK_THRESHOLD else "no_call")
-                for prob in probs
-            ]
-        )
+        decisions = decisions_from_probs(probs)
         called_mask = decisions != "no_call"
         no_call_rate = float((~called_mask).mean())
 
@@ -117,6 +174,8 @@ def main() -> None:
                 }
             )
 
+        by_group, generalization = group_generalization(y_test, probs, groups)
+
         metrics[antibiotic] = {
             "n_test": len(y_rows),
             "n_resistant": int(y_test.sum()),
@@ -131,6 +190,8 @@ def main() -> None:
             "pr_auc": round(pr_auc, 4) if pr_auc is not None else None,
             "brier_score": round(brier, 4),
             "reliability": reliability_bins,
+            "generalization": generalization,
+            "by_group": by_group,
             "fail_threshold": FAIL_THRESHOLD,
             "work_threshold": WORK_THRESHOLD,
         }
@@ -138,6 +199,11 @@ def main() -> None:
         print(f"\n{antibiotic}:")
         print(f"  n_test={len(y_rows)} resistant={int(y_test.sum())} no_call={no_call_rate:.1%}")
         print(f"  AUROC={auroc} PR-AUC={pr_auc} Brier={brier:.4f} BalAcc={bal_acc}")
+        if generalization:
+            print(
+                f"  generalization across {generalization['n_groups_evaluated']} genetic groups: "
+                f"AUROC mean={generalization['auroc_mean']} min={generalization['auroc_min']}"
+            )
 
     output_path = ARTIFACTS_DIR / "demo_metrics.json"
     with open(output_path, "w", encoding="utf-8") as handle:

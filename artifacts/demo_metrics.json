@@ -74,6 +74,105 @@
         "count": 565
       }
     ],
+    "generalization": {
+      "n_groups_evaluated": 11,
+      "min_group_size": 15,
+      "auroc_mean": 0.8831,
+      "auroc_median": 0.9683,
+      "auroc_min": 0.6083,
+      "balanced_accuracy_mean": 0.8725,
+      "balanced_accuracy_min": 0.48
+    },
+    "by_group": [
+      {
+        "group": "10940",
+        "n": 20,
+        "resistant_rate": 0.3,
+        "auroc": 0.9762,
+        "balanced_accuracy_called": 0.9643,
+        "no_call_rate": 0.0
+      },
+      {
+        "group": "11106",
+        "n": 47,
+        "resistant_rate": 0.0213,
+        "auroc": 1.0,
+        "balanced_accuracy_called": 1.0,
+        "no_call_rate": 0.0
+      },
+      {
+        "group": "11516",
+        "n": 15,
+        "resistant_rate": 0.8,
+        "auroc": 1.0,
+        "balanced_accuracy_called": 1.0,
+        "no_call_rate": 0.0
+      },
+      {
+        "group": "164",
+        "n": 21,
+        "resistant_rate": 1.0,
+        "auroc": null,
+        "balanced_accuracy_called": null,
+        "no_call_rate": 0.0
+      },
+      {
+        "group": "194",
+        "n": 53,
+        "resistant_rate": 0.717,
+        "auroc": 0.8851,
+        "balanced_accuracy_called": 0.9231,
+        "no_call_rate": 0.0377
+      },
+      {
+        "group": "21",
+        "n": 20,
+        "resistant_rate": 0.15,
+        "auroc": 1.0,
+        "balanced_accuracy_called": 1.0,
+        "no_call_rate": 0.0
+      },
+      {
+        "group": "346",
+        "n": 19,
+        "resistant_rate": 0.7895,
+        "auroc": 0.6083,
+        "balanced_accuracy_called": 0.625,
+        "no_call_rate": 0.0
+      },
+      {
+        "group": "347",
+        "n": 127,
+        "resistant_rate": 0.2047,
+        "auroc": 0.8898,
+        "balanced_accuracy_called": 0.9423,
+        "no_call_rate": 0.0157
+      },
+      {
+        "group": "4142",
+        "n": 26,
+        "resistant_rate": 0.0385,
+        "auroc": 0.62,
+        "balanced_accuracy_called": 0.48,
+        "no_call_rate": 0.0
+      },
+      {
+        "group": "44",
+        "n": 103,
+        "resistant_rate": 0.8641,
+        "auroc": 0.9683,
+        "balanced_accuracy_called": 0.9175,
+        "no_call_rate": 0.0097
+      },
+      {
+        "group": "603",
+        "n": 24,
+        "resistant_rate": 1.0,
+        "auroc": null,
+        "balanced_accuracy_called": null,
+        "no_call_rate": 0.0
+      }
+    ],
     "fail_threshold": 0.72,
     "work_threshold": 0.28
   },
@@ -150,6 +249,97 @@
         "mean_prob": 0.9346,
         "frac_positive": 0.931,
         "count": 29
+      }
+    ],
+    "generalization": {
+      "n_groups_evaluated": 10,
+      "min_group_size": 15,
+      "auroc_mean": 0.3448,
+      "auroc_median": 0.3152,
+      "auroc_min": 0.1579,
+      "balanced_accuracy_mean": 0.5357,
+      "balanced_accuracy_min": 0.4947
+    },
+    "by_group": [
+      {
+        "group": "10940",
+        "n": 20,
+        "resistant_rate": 0.05,
+        "auroc": 0.1579,
+        "balanced_accuracy_called": 0.5,
+        "no_call_rate": 0.05
+      },
+      {
+        "group": "11106",
+        "n": 45,
+        "resistant_rate": 0.0,
+        "auroc": null,
+        "balanced_accuracy_called": null,
+        "no_call_rate": 0.0222
+      },
+      {
+        "group": "194",
+        "n": 58,
+        "resistant_rate": 0.0,
+        "auroc": null,
+        "balanced_accuracy_called": null,
+        "no_call_rate": 0.2069
+      },
+      {
+        "group": "21",
+        "n": 20,
+        "resistant_rate": 0.0,
+        "auroc": null,
+        "balanced_accuracy_called": null,
+        "no_call_rate": 0.0
+      },
+      {
+        "group": "346",
+        "n": 18,
+        "resistant_rate": 0.0,
+        "auroc": null,
+        "balanced_accuracy_called": null,
+        "no_call_rate": 0.4444
+      },
+      {
+        "group": "347",
+        "n": 124,
+        "resistant_rate": 0.0161,
+        "auroc": 0.4303,
+        "balanced_accuracy_called": 0.4947,
+        "no_call_rate": 0.2258
+      },
+      {
+        "group": "4142",
+        "n": 31,
+        "resistant_rate": 0.0323,
+        "auroc": 0.2,
+        "balanced_accuracy_called": 0.5,
+        "no_call_rate": 0.0323
+      },
+      {
+        "group": "4321",
+        "n": 15,
+        "resistant_rate": 0.0,
+        "auroc": null,
+        "balanced_accuracy_called": null,
+        "no_call_rate": 0.6667
+      },
+      {
+        "group": "44",
+        "n": 99,
+        "resistant_rate": 0.101,
+        "auroc": 0.591,
+        "balanced_accuracy_called": 0.6482,
+        "no_call_rate": 0.3838
+      },
+      {
+        "group": "603",
+        "n": 25,
+        "resistant_rate": 1.0,
+        "auroc": null,
+        "balanced_accuracy_called": null,
+        "no_call_rate": 0.24
       }
     ],
     "fail_threshold": 0.72,
@@ -230,6 +420,8 @@
         "count": 43
       }
     ],
+    "generalization": null,
+    "by_group": [],
     "fail_threshold": 0.72,
     "work_threshold": 0.28
   },
@@ -302,6 +494,8 @@
         "count": 84
       }
     ],
+    "generalization": null,
+    "by_group": [],
     "fail_threshold": 0.72,
     "work_threshold": 0.28
   }
