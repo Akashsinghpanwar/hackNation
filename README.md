@@ -4,7 +4,7 @@ Node.js/TypeScript web app that predicts antibiotic response in E. coli from
 genome-derived AMR marker features, backed by real calibrated LightGBM models
 served through a Python inference bridge.
 
-Output is tri-state: `likely_to_fail`, `likely_to_work`, or `no_call`. Every result includes probability, confidence, evidence category, target-gate status, and the required lab-confirmation warning.
+Output is tri-state: `likely_to_fail`, `likely_to_work`, or `no_call`. Every result includes probability, confidence, evidence category, target-gate status, and the required lab-confirmation warning.The default pipeline for most AMR
 
 > Research prototype only. Confirm every result with standard laboratory susceptibility testing.
 
@@ -17,10 +17,10 @@ and stop at a held-out test AUROC slide. This build does neither:
    tools requires BLAST or AMRFinderPlus installed and on `PATH`. This app ships a
    pure-Python MinHash k-mer index (~1.5 MB, committed) so a raw, unannotated
    assembly gets real gene-family calls with no external binary, no internet
-   access, and no setup step — `pip install` and go.
+   access, and no setup step, `pip install` and go.
 2. **Two independent gene-detection paths, both separately validated against real
    lab data**, not just the training split: the offline k-mer detector and the
-   live BV-BRC `genome_feature` fetch. See "Independent Validation" below —
+   live BV-BRC `genome_feature` fetch. See "Independent Validation" below,
    ~3,000 genomes downloaded fresh from BV-BRC and re-run through both paths,
    confirming the shipped models generalize beyond their original test set.
 3. **Honest abstention, not a forced coin flip.** The tri-state
@@ -129,7 +129,7 @@ On top of the genomic prediction, the app adds two OpenAI modalities (optional):
   chat model (`OPENAI_TEXT_MODEL`, default `gpt-4o-mini`) which explains, in plain
   language, which detected genes drive which prediction and what a no-call means, always
   ending with the lab-confirmation caveat.
-- **Read aloud (audio)** — `POST /api/speak` sends the generated summary to a
+- **Read aloud (audio)**, `POST /api/speak` sends the generated summary to a
   text-to-speech model (`OPENAI_TTS_MODEL`, default `gpt-4o-mini-tts`) and returns MP3
   audio played inline.
 
