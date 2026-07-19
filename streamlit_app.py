@@ -27,11 +27,21 @@ FEATURE_COLS_PATH = DATA_DIR / "feature_columns.json"
 FEATURE_META_PATH = DATA_DIR / "feature_meta.json"
 ANTIBIOTIC_SUMMARY_PATH = DATA_DIR / "summary_by_antibiotic.csv"
 DEMO_SAMPLES_DIR = ROOT / "demo_samples"
+REF_DIR = ROOT / "data" / "amr_reference"
+KMER_INDEX_PATH = ROOT / "artifacts" / "kmer_index.json"
 
 ANTIBIOTICS = ["ampicillin", "ciprofloxacin", "ceftriaxone", "tetracycline"]
 FAIL_THRESHOLD = 0.72
 WORK_THRESHOLD = 0.28
+CONTAINMENT_THRESHOLD = 0.5
+K_MIN_SEQUENCE_BASES = 5_000     # enough real DNA to run the k-mer detector
+MIN_GENOME_BASES = 500_000       # below this we do not assume a full E. coli assembly
+# Chromosomal E. coli genes present in ~all isolates but absent from the acquired-AMR
+# reference DB. For a real E. coli assembly they are effectively always present, so we
+# set them by default to keep inference features consistent with training.
+CORE_ECOLI_GENES = {"blaEC", "blaAmpC", "marA", "marR", "marB"}
 DISCLAIMER = "Research prototype only. Confirm every result with standard laboratory susceptibility testing."
+_BASE_CODE = {"A": 0, "C": 1, "G": 2, "T": 3}
 
 warnings.filterwarnings(
     "ignore",
@@ -118,6 +128,12 @@ class FeatureEvidence:
     products: list[str]
     amrfinder_rows: list[dict[str, str]]
     species_supported: bool = True
+    base_count: int = 0
+    contig_count: int = 0
+    genome_length_z: float = 0.0
+    contigs_z: float = 0.0
+    requires_annotation: bool = False
+    annotation_warning: str = ""
 
 
 def inject_css() -> None:
@@ -246,6 +262,68 @@ def load_models() -> dict:
     return models
 
 
+@st.cache_resource
+def load_kmer_index() -> dict | None:
+    """Load the prebuilt AMR reference k-mer index (from scripts/05_build_reference_index.py)."""
+    if not KMER_INDEX_PATH.exists():
+        return None
+    with open(KMER_INDEX_PATH, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def kmer_detector_available() -> bool:
+    return KMER_INDEX_PATH.exists()
+
+
+def genome_kmer_set(text: str, k: int) -> set[int]:
+    """Canonical 2-bit-encoded k-mer set for a FASTA genome (both strands, per contig)."""
+    codes: set[int] = set()
+    mask = (1 << (2 * k)) - 1
+    top_shift = 2 * (k - 1)
+    for block in re.split(r"^>.*$", text, flags=re.MULTILINE):
+        seq = "".join(block.split()).upper()
+        fwd = rev = valid = 0
+        for base in seq:
+            code = _BASE_CODE.get(base)
+            if code is None:
+                fwd = rev = valid = 0
+                continue
+            fwd = ((fwd << 2) | code) & mask
+            rev = (rev >> 2) | ((3 - code) << top_shift)
+            valid += 1
+            if valid >= k:
+                codes.add(fwd if fwd <= rev else rev)
+    return codes
+
+
+def detect_amr_genes_from_dna(text: str) -> tuple[dict[str, float], int]:
+    """Detect AMR marker families in a raw nucleotide FASTA via reference k-mer containment.
+
+    Returns ({family: containment_score}, unique_kmer_count).
+    """
+    index = load_kmer_index()
+    if index is None:
+        return {}, 0
+    k = int(index["k"])
+    families: dict[str, list[list[int]]] = index["families"]
+    query = genome_kmer_set(text, k)
+    detected: dict[str, float] = {}
+    for family, sketches in families.items():
+        best = 0.0
+        for sketch in sketches:
+            if not sketch:
+                continue
+            present = sum(1 for code in sketch if code in query)
+            ratio = present / len(sketch)
+            if ratio > best:
+                best = ratio
+            if best >= 0.99:
+                break
+        if best >= CONTAINMENT_THRESHOLD:
+            detected[family] = round(best, 3)
+    return detected, len(query)
+
+
 @st.cache_data
 def load_metrics() -> dict:
     if not METRICS_PATH.exists():
@@ -313,14 +391,61 @@ def detect_targets(products: list[str]) -> set[str]:
     return targets
 
 
-def parse_annotated_fasta(text: str) -> FeatureEvidence:
-    headers = [line[1:].strip() for line in text.splitlines() if line.startswith(">")]
+def fasta_stats(text: str) -> tuple[list[str], int, int, float, float]:
+    headers: list[str] = []
+    base_count = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(">"):
+            headers.append(stripped[1:].strip())
+            continue
+        base_count += sum(1 for char in stripped.upper() if char in {"A", "C", "G", "T", "N"})
+
+    stats = load_feature_meta().get("norm_stats", {})
+    length_mean = float(stats.get("length_mean", 0.0) or 0.0)
+    length_std = float(stats.get("length_std", 1.0) or 1.0)
+    contigs_mean = float(stats.get("contigs_mean", 0.0) or 0.0)
+    contigs_std = float(stats.get("contigs_std", 1.0) or 1.0)
+    contig_count = len(headers)
+    genome_length_z = (base_count - length_mean) / length_std if length_std else 0.0
+    contigs_z = (contig_count - contigs_mean) / contigs_std if contigs_std else 0.0
+    return headers, base_count, contig_count, genome_length_z, contigs_z
+
+
+def headers_look_annotated(headers: list[str]) -> bool:
+    annotation_pattern = re.compile(
+        r"product=|gene=|protein|lactamase|resistance|efflux|gyrase|topoisomerase|ribosomal|"
+        r"penicillin-binding|aminoglycoside|tetracycline|Escherichia|fig\|",
+        re.IGNORECASE,
+    )
+    return any(annotation_pattern.search(header) for header in headers)
+
+
+def parse_annotated_fasta(text: str, require_annotation: bool = False) -> FeatureEvidence:
+    headers, base_count, contig_count, genome_length_z, contigs_z = fasta_stats(text)
+    genes = classify_products(headers)
+    targets = detect_targets(headers)
+    missing_annotation = require_annotation and not genes and not targets and not headers_look_annotated(headers)
+    warning = (
+        "Raw FASTA sequence was loaded, but no gene/product annotations were detected. "
+        "This model needs AMR marker features from AMRFinderPlus or annotated FASTA headers."
+        if missing_annotation
+        else ""
+    )
     return FeatureEvidence(
         source="Annotated FASTA headers",
-        genes=classify_products(headers),
-        targets=detect_targets(headers),
+        genes=genes,
+        targets=targets,
         products=headers,
         amrfinder_rows=[],
+        base_count=base_count,
+        contig_count=contig_count,
+        genome_length_z=genome_length_z,
+        contigs_z=contigs_z,
+        requires_annotation=missing_annotation,
+        annotation_warning=warning,
     )
 
 
@@ -407,8 +532,10 @@ def build_feature_vector(evidence: FeatureEvidence, feature_cols: list[str]) -> 
     for col in feature_cols:
         if col == "amr_gene_burden":
             values.append(float(sum(1 for gene in gene_feature_cols if gene in evidence.genes)))
-        elif col in {"genome_length_z", "contigs_z"}:
-            values.append(0.0)
+        elif col == "genome_length_z":
+            values.append(float(getattr(evidence, "genome_length_z", 0.0)))
+        elif col == "contigs_z":
+            values.append(float(getattr(evidence, "contigs_z", 0.0)))
         else:
             values.append(1.0 if col in evidence.genes else 0.0)
     return np.array(values)
@@ -423,6 +550,21 @@ def target_status(antibiotic: str, evidence: FeatureEvidence) -> tuple[str, bool
 
 
 def predict(evidence: FeatureEvidence, models: dict, feature_cols: list[str]) -> list[dict]:
+    if getattr(evidence, "requires_annotation", False):
+        return [
+            {
+                "antibiotic": antibiotic,
+                "decision": "no_call",
+                "prob": None,
+                "confidence": None,
+                "evidence_category": "raw FASTA requires AMRFinderPlus or annotated gene features",
+                "markers": [],
+                "target_status": "not_evaluated",
+                "reason_codes": ["missing_amrfinderplus_annotation"],
+            }
+            for antibiotic in ANTIBIOTICS
+        ]
+
     base_vector = build_feature_vector(evidence, feature_cols)
     predictions = []
     for antibiotic in ANTIBIOTICS:
@@ -758,7 +900,16 @@ def render_source_details(evidence: FeatureEvidence) -> None:
     st.markdown('<div class="panel">', unsafe_allow_html=True)
     st.subheader("Input Evidence")
     st.write(f"Source: `{evidence.source}`")
+    st.write(f"FASTA stats: `{getattr(evidence, 'contig_count', 0):,}` contigs / `{getattr(evidence, 'base_count', 0):,}` bases")
     st.write(f"Detected AMR feature families: `{len(evidence.genes)}`")
+    if getattr(evidence, "annotation_warning", ""):
+        st.warning(evidence.annotation_warning)
+        st.info("The ML model is loaded, but raw DNA FASTA must be converted into AMR marker features before prediction.")
+        st.code(
+            "amrfinder -n your_genome.fna -O Escherichia -o your_genome.amrfinder.tsv\n"
+            "# Then upload your_genome.amrfinder.tsv in the AMRFinderPlus TSV tab.",
+            language="bash",
+        )
     if evidence.genes:
         st.markdown(" ".join(f'<span class="chip">{gene}</span>' for gene in sorted(evidence.genes)), unsafe_allow_html=True)
     st.write(f"Detected target families: `{', '.join(sorted(evidence.targets)) or 'none from annotations'}`")
@@ -788,12 +939,64 @@ def decode_upload(upload) -> str:
     return upload.getvalue().decode("utf-8", errors="replace")
 
 
+def build_evidence_from_dna(fasta_text: str, source: str) -> FeatureEvidence:
+    """Raw nucleotide FASTA -> AMR marker features using the reference k-mer detector."""
+    headers, base_count, contig_count, genome_length_z, contigs_z = fasta_stats(fasta_text)
+    detected, n_kmers = detect_amr_genes_from_dna(fasta_text)
+    genes = set(detected)
+    is_genome = base_count >= MIN_GENOME_BASES
+    if is_genome:
+        # A real E. coli assembly: add core chromosomal genes always present in the species.
+        genes |= CORE_ECOLI_GENES
+    targets = set(ANTIBIOTICS) if is_genome else detect_targets(headers)
+    warning = ""
+    if not is_genome:
+        warning = (
+            f"Only {base_count:,} bases found. This looks like a gene/fragment file, not a full "
+            "genome assembly, so species-level core genes were not assumed."
+        )
+    return FeatureEvidence(
+        source=f"Built-in k-mer detector (NCBI AMR reference): {source}",
+        genes=genes,
+        targets=targets,
+        products=[f"{fam} (containment {score:.0%})" for fam, score in sorted(detected.items())],
+        amrfinder_rows=[],
+        base_count=base_count,
+        contig_count=contig_count,
+        genome_length_z=genome_length_z,
+        contigs_z=contigs_z,
+        requires_annotation=False,
+        annotation_warning=warning,
+    )
+
+
 def process_fasta_text(fasta_text: str, source: str, run_amrfinder: bool) -> FeatureEvidence:
     if run_amrfinder:
         evidence = run_amrfinder_on_fasta(fasta_text)
         evidence.source = f"AMRFinderPlus from FASTA: {source}"
         return evidence
-    evidence = parse_annotated_fasta(fasta_text)
+
+    # If headers already NAME specific AMR genes, trust them directly.
+    headers, base_count, _, _, _ = fasta_stats(fasta_text)
+    if classify_products(headers):
+        evidence = parse_annotated_fasta(fasta_text, require_annotation=False)
+        evidence.source = f"Annotated FASTA headers: {source}"
+        return evidence
+
+    # Otherwise, if there is real nucleotide sequence, detect AMR genes from the DNA
+    # itself with the reference k-mer index. (A species name in a contig header does
+    # not count as gene annotation.)
+    if kmer_detector_available() and base_count >= K_MIN_SEQUENCE_BASES:
+        return build_evidence_from_dna(fasta_text, source)
+
+    # Annotated-looking headers but no detectable genes and no usable sequence.
+    if headers_look_annotated(headers):
+        evidence = parse_annotated_fasta(fasta_text, require_annotation=False)
+        evidence.source = f"Annotated FASTA headers: {source}"
+        return evidence
+
+    # No detector index available -> fall back to the safe annotation-required path.
+    evidence = parse_annotated_fasta(fasta_text, require_annotation=True)
     evidence.source = f"Annotated FASTA fallback: {source}"
     return evidence
 
@@ -809,33 +1012,43 @@ def render_input_panel() -> None:
     )
 
     if mode == "FASTA upload":
-        available = amrfinder_available()
+        amrfinder_ok = amrfinder_available()
+        kmer_ok = kmer_detector_available()
         st.caption(
             "Upload accepts .fa, .fasta, .fna, .ffn, .faa, or .txt. "
-            "If the file picker does not open in your browser, paste FASTA text below."
+            "Raw nucleotide assemblies are supported - no external tools required."
         )
-        st.info("AMRFinderPlus on PATH: " + ("yes" if available else "no"))
-        run_amrfinder = st.checkbox("Run AMRFinderPlus for assembled FASTA", value=available, disabled=not available)
+        if kmer_ok:
+            st.info("Built-in AMR gene detector (NCBI reference k-mer index): ready")
+        else:
+            st.warning("k-mer index missing. Run: python scripts/05_build_reference_index.py")
+        run_amrfinder = st.checkbox(
+            "Prefer AMRFinderPlus if installed",
+            value=amrfinder_ok,
+            disabled=not amrfinder_ok,
+            help="AMRFinderPlus on PATH: " + ("yes" if amrfinder_ok else "no"),
+        )
         upload = st.file_uploader(
             "Drop or browse FASTA",
             type=["fa", "fasta", "fna", "ffn", "faa", "txt"],
             key="fasta_upload",
-            help="Raw assembled FASTA needs AMRFinderPlus. Annotated FASTA headers can be parsed as a fallback.",
+            help="Raw assembled genome FASTA is scanned by the built-in reference k-mer detector.",
         )
-        pasted = st.text_area("Or paste FASTA text", height=130, placeholder=">contig_1 product=blaTEM beta-lactamase\nATGC...")
+        pasted = st.text_area("Or paste FASTA text", height=130, placeholder=">contig_1\nATGCATGCATGC...")
         source = upload.name if upload else "pasted FASTA"
         fasta_text = decode_upload(upload) if upload else pasted.strip()
         if fasta_text:
             try:
-                with st.spinner("Reading FASTA..."):
+                with st.spinner("Scanning genome for AMR genes (k-mer detection)..."):
                     evidence = process_fasta_text(fasta_text, source, run_amrfinder)
                 set_evidence(evidence)
                 st.success(f"Loaded FASTA input: {source}")
-                if not evidence.genes:
-                    st.warning(
-                        "No AMR marker names were detected from headers. For raw contig FASTA, run AMRFinderPlus "
-                        "outside the app and upload its TSV, or install AMRFinderPlus on PATH."
-                    )
+                if getattr(evidence, "requires_annotation", False):
+                    st.warning(evidence.annotation_warning)
+                elif evidence.genes:
+                    st.info(f"Detected {len(evidence.genes)} AMR marker families: " + ", ".join(sorted(evidence.genes)))
+                else:
+                    st.info("No acquired resistance genes detected; prediction relies on absence of markers and the target gate.")
             except Exception as exc:
                 st.error(f"FASTA analysis failed: {exc}")
 
@@ -871,7 +1084,7 @@ def render_input_panel() -> None:
         selected = st.selectbox("Demo sample", list(demos))
         if st.button("Load demo sample", type="primary", use_container_width=True):
             text = (DEMO_SAMPLES_DIR / demos[selected]).read_text(encoding="utf-8")
-            evidence = parse_annotated_fasta(text)
+            evidence = parse_annotated_fasta(text, require_annotation=True)
             evidence.source = f"Demo annotated FASTA: {demos[selected]}"
             set_evidence(evidence)
             st.success("Demo sample loaded.")
@@ -906,6 +1119,22 @@ def render_decision_table(predictions: list[dict]) -> None:
 def render_prediction_dashboard(evidence: FeatureEvidence, models: dict, feature_cols: list[str]) -> None:
     predictions = predict(evidence, models, feature_cols)
     render_prediction_overview(predictions, evidence)
+    if getattr(evidence, "requires_annotation", False):
+        st.markdown(
+            """
+<div class="panel">
+  <h3>Prediction blocked: annotation required</h3>
+  <p class="muted">This uploaded FASTA contains sequence bases, but no detected gene/product names.
+  Upload AMRFinderPlus TSV or install AMRFinderPlus so the app can extract AMR marker features.</p>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+        render_decision_table(predictions)
+        render_source_details(evidence)
+        st.markdown(f'<div class="warning">{DISCLAIMER}</div>', unsafe_allow_html=True)
+        return
+
     left, right = st.columns([1.12, 0.88])
     with left:
         st.markdown('<div class="panel">', unsafe_allow_html=True)
@@ -1048,6 +1277,9 @@ def render_sidebar(models: dict, metrics: dict) -> str:
     with st.sidebar:
         st.title("AMRShield Sentinel")
         st.caption("Streamlit / Python ML path")
+        st.divider()
+        detector = "ready" if kmer_detector_available() else "missing"
+        st.write(f"Raw-FASTA gene detector: {detector}")
         st.divider()
         for antibiotic in ANTIBIOTICS:
             loaded = "loaded" if antibiotic in models else "missing"

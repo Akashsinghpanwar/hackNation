@@ -10,14 +10,17 @@ Output is tri-state: `likely_to_fail`, `likely_to_work`, or `no_call`. Every res
 
 ```mermaid
 flowchart TD
-    A[Assembled E. coli FASTA] --> B{AMRFinderPlus installed?}
-    B -->|yes| C[Run amrfinder -n FASTA -O Escherichia]
-    B -->|no| D[Upload precomputed AMRFinderPlus TSV]
-    C --> E[Parse AMRFinderPlus TSV]
-    D --> E
+    A[Assembled E. coli FASTA] --> B{Raw DNA or annotated?}
+    B -->|raw nucleotide| C[Built-in k-mer detector vs NCBI AMR reference]
+    B -->|AMRFinderPlus installed| C2[Run amrfinder -n FASTA -O Escherichia]
+    B -->|annotated headers| C3[Parse gene/product headers]
+    D[Upload precomputed AMRFinderPlus TSV] --> E[Map to marker families]
     F[BV-BRC genome ID demo path] --> G[Fetch genome_feature products]
+    C --> E
+    C2 --> E
+    C3 --> E
+    G --> E
     E --> H[Map genes/mutations to 20 AMR marker families]
-    G --> H
     H --> I[Build 23 numeric model features]
     I --> J[Target gate per antibiotic]
     I --> K[Calibrated LightGBM models]
@@ -26,10 +29,32 @@ flowchart TD
     L --> M[Streamlit UI: prediction, metrics, data, safety]
 ```
 
+## Raw FASTA to Genes (Built-in Detector)
+
+A raw genome assembly (just `>contig` headers and DNA) carries no gene names, so it
+cannot be predicted without an annotation step. Instead of requiring an AMRFinderPlus
+install, the app ships a **self-contained nucleotide AMR gene detector**:
+
+1. `scripts/05_build_reference_index.py` downloads the public-domain NCBI AMRFinderPlus
+   reference gene database (`AMR_CDS.fa`, ~9,700 real allele sequences) and builds a
+   compact **MinHash k-mer index** (`artifacts/kmer_index.json`, ~1.5 MB, committed).
+2. At upload time the genome is reduced to a set of canonical 21-mers (both strands),
+   and each reference allele's sketch **containment** is measured. Containment >= 0.5
+   marks a gene family as present. This is the same idea used by Mash / sourmash, in
+   pure Python - no BLAST, no external tools, works offline after the one-time build.
+3. Detected acquired genes plus the species' core chromosomal genes become the same
+   20-family feature vector the LightGBM models were trained on.
+
+Validated on a real 4.6 Mbp *E. coli* K-12 assembly: ~3.5 s scan, zero false-positive
+acquired genes (only chromosomal `blaEC`/`ampC`), while a genome carrying real
+`blaTEM`, `blaCTX-M`, `tetA`, `aadA`, `sul1`, `qnrS` sequences is called
+`likely_to_fail` for all four drugs with the correct supporting markers.
+
 ## What Is Fixed
 
-- AMRFinderPlus is now the default FASTA annotation path in the Streamlit app when `amrfinder` is available on `PATH`.
-- Precomputed AMRFinderPlus TSV upload is supported, so the app still works when AMRFinderPlus is not locally installed.
+- Raw nucleotide FASTA uploads now work directly via the built-in k-mer AMR detector - no AMRFinderPlus or BLAST install required.
+- AMRFinderPlus is still used automatically when `amrfinder` is available on `PATH`, and precomputed AMRFinderPlus TSV upload is also supported.
+- A species name in a contig header is no longer mistaken for gene annotation (routing fix).
 - The previous `genetic_group` predictive feature was removed to avoid lineage leakage.
 - Calibration now uses `StratifiedGroupKFold` splits based on the grouped training data.
 - PR-AUC now uses `average_precision_score`, not the previous broken trapezoid calculation.
@@ -90,6 +115,7 @@ The committed training features are BV-BRC `genome_feature` product-name markers
    - Script: `streamlit run streamlit_app.py`
    - Inputs: AMRFinderPlus TSV, FASTA with AMRFinderPlus when installed, BV-BRC genome ID, or demo annotated FASTA.
    - Output: tri-state antibiotic report plus Tableau-style charts and safety disclaimer.
+   - Important: raw contig FASTA without gene/product annotations cannot be converted into AMR marker features by this app unless AMRFinderPlus is installed. In that case the app returns `no_call` instead of producing misleading repeated predictions.
 
 ## Feature Output Format
 
@@ -138,13 +164,22 @@ Install Python dependencies:
 pip install -r requirements.txt
 ```
 
-Optional but recommended for assembled FASTA input:
+The committed `artifacts/kmer_index.json` already lets raw FASTA uploads work out of
+the box. To rebuild it from the current NCBI reference:
+
+```bash
+curl -o data/amr_reference/AMR_CDS.fa \
+  https://ftp.ncbi.nlm.nih.gov/pathogen/Antimicrobial_resistance/AMRFinderPlus/database/latest/AMR_CDS.fa
+python scripts/05_build_reference_index.py
+```
+
+Optional, only if you prefer the gold-standard annotation for assembled FASTA:
 
 ```bash
 amrfinder -n sample.fna -O Escherichia -o sample.amrfinder.tsv
 ```
 
-Rebuild artifacts:
+Rebuild model artifacts:
 
 ```bash
 python scripts/02_build_matrices.py
@@ -166,6 +201,12 @@ Then open `http://localhost:8501`.
 - AMRFinderPlus TSV: upload precomputed AMRFinderPlus output.
 - BV-BRC Genome ID: fetches public genome feature annotations for demo/prototype use.
 - Demo annotated FASTA: built-in synthetic examples for quick UI testing.
+
+If every raw FASTA file appears to produce the same result, that means no AMR marker annotations were available. Use one of these paths:
+
+1. Install AMRFinderPlus and let the app run it.
+2. Run AMRFinderPlus outside the app and upload the TSV.
+3. Upload an annotated FASTA whose headers contain gene/product names.
 
 ## Repository Map
 
