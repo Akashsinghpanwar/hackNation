@@ -3,74 +3,75 @@
     "n_test": 1392,
     "n_resistant": 729,
     "n_susceptible": 663,
-    "no_call_rate": 0.0632,
-    "balanced_accuracy_called": 0.9389,
-    "f1_called": 0.9408,
-    "resistant_recall_called": 0.924,
-    "susceptible_recall_called": 0.9539,
-    "auroc": 0.948,
-    "pr_auc": null,
-    "brier_score": 0.0683,
+    "no_call_rate": 0.0338,
+    "balanced_accuracy_called": 0.947,
+    "answered_accuracy": 0.9457,
+    "f1_called": 0.9474,
+    "resistant_recall_called": 0.9241,
+    "susceptible_recall_called": 0.97,
+    "auroc": 0.9593,
+    "pr_auc": 0.9577,
+    "brier_score": 0.057,
     "reliability": [
       {
         "bin_center": 0.05,
-        "mean_prob": 0.0585,
-        "frac_positive": 0.0714,
-        "count": 490
+        "mean_prob": 0.0869,
+        "frac_positive": 0.0395,
+        "count": 152
       },
       {
         "bin_center": 0.15,
-        "mean_prob": 0.1387,
-        "frac_positive": 0.1058,
-        "count": 104
+        "mean_prob": 0.1194,
+        "frac_positive": 0.0924,
+        "count": 476
       },
       {
         "bin_center": 0.25,
-        "mean_prob": 0.2492,
-        "frac_positive": 0.2,
+        "mean_prob": 0.2418,
+        "frac_positive": 0.1333,
         "count": 45
       },
       {
         "bin_center": 0.35,
-        "mean_prob": 0.3369,
-        "frac_positive": 0.2727,
-        "count": 33
+        "mean_prob": 0.3449,
+        "frac_positive": 0.2222,
+        "count": 18
       },
       {
         "bin_center": 0.45,
-        "mean_prob": 0.4401,
-        "frac_positive": 0.3478,
-        "count": 23
+        "mean_prob": 0.4826,
+        "frac_positive": 0.4444,
+        "count": 9
       },
       {
         "bin_center": 0.55,
-        "mean_prob": 0.5659,
-        "frac_positive": 0.4615,
-        "count": 13
-      },
-      {
-        "bin_center": 0.65,
-        "mean_prob": 0.6556,
+        "mean_prob": 0.5346,
         "frac_positive": 0.5455,
         "count": 11
       },
       {
+        "bin_center": 0.65,
+        "mean_prob": 0.6552,
+        "frac_positive": 0.4,
+        "count": 5
+      },
+      {
         "bin_center": 0.75,
-        "mean_prob": 0.7568,
-        "frac_positive": 0.9091,
-        "count": 11
+        "mean_prob": 0.7573,
+        "frac_positive": 0.7778,
+        "count": 9
       },
       {
         "bin_center": 0.85,
-        "mean_prob": 0.8632,
-        "frac_positive": 0.9643,
-        "count": 28
+        "mean_prob": 0.8477,
+        "frac_positive": 1.0,
+        "count": 16
       },
       {
         "bin_center": 0.95,
-        "mean_prob": 0.9776,
-        "frac_positive": 0.9587,
-        "count": 581
+        "mean_prob": 0.976,
+        "frac_positive": 0.9735,
+        "count": 565
       }
     ],
     "fail_threshold": 0.72,
@@ -80,74 +81,75 @@
     "n_test": 1437,
     "n_resistant": 215,
     "n_susceptible": 1222,
-    "no_call_rate": 0.1127,
-    "balanced_accuracy_called": 0.824,
-    "f1_called": 0.7231,
-    "resistant_recall_called": 0.6768,
-    "susceptible_recall_called": 0.9712,
-    "auroc": 0.9017,
-    "pr_auc": null,
-    "brier_score": 0.0788,
+    "no_call_rate": 0.2192,
+    "balanced_accuracy_called": 0.8305,
+    "answered_accuracy": 0.9278,
+    "f1_called": 0.7197,
+    "resistant_recall_called": 0.698,
+    "susceptible_recall_called": 0.963,
+    "auroc": 0.8631,
+    "pr_auc": 0.6655,
+    "brier_score": 0.0989,
     "reliability": [
       {
         "bin_center": 0.05,
-        "mean_prob": 0.0202,
-        "frac_positive": 0.0221,
-        "count": 952
+        "mean_prob": 0.045,
+        "frac_positive": 0.0268,
+        "count": 597
       },
       {
         "bin_center": 0.15,
-        "mean_prob": 0.1456,
-        "frac_positive": 0.0734,
-        "count": 109
+        "mean_prob": 0.1443,
+        "frac_positive": 0.0618,
+        "count": 275
       },
       {
         "bin_center": 0.25,
-        "mean_prob": 0.245,
-        "frac_positive": 0.3373,
-        "count": 83
+        "mean_prob": 0.2507,
+        "frac_positive": 0.1095,
+        "count": 137
       },
       {
         "bin_center": 0.35,
-        "mean_prob": 0.3522,
-        "frac_positive": 0.2833,
-        "count": 60
+        "mean_prob": 0.3485,
+        "frac_positive": 0.1099,
+        "count": 91
       },
       {
         "bin_center": 0.45,
-        "mean_prob": 0.4432,
-        "frac_positive": 0.449,
-        "count": 49
+        "mean_prob": 0.4443,
+        "frac_positive": 0.1385,
+        "count": 65
       },
       {
         "bin_center": 0.55,
-        "mean_prob": 0.5419,
-        "frac_positive": 0.2308,
-        "count": 26
+        "mean_prob": 0.5496,
+        "frac_positive": 0.2203,
+        "count": 59
       },
       {
         "bin_center": 0.65,
-        "mean_prob": 0.66,
-        "frac_positive": 0.0909,
-        "count": 11
+        "mean_prob": 0.6471,
+        "frac_positive": 0.4032,
+        "count": 62
       },
       {
         "bin_center": 0.75,
-        "mean_prob": 0.7441,
-        "frac_positive": 0.3636,
-        "count": 11
+        "mean_prob": 0.7617,
+        "frac_positive": 0.5946,
+        "count": 74
       },
       {
         "bin_center": 0.85,
-        "mean_prob": 0.8633,
-        "frac_positive": 0.3333,
-        "count": 12
+        "mean_prob": 0.8404,
+        "frac_positive": 0.8,
+        "count": 45
       },
       {
         "bin_center": 0.95,
-        "mean_prob": 0.972,
-        "frac_positive": 0.8387,
-        "count": 124
+        "mean_prob": 0.9346,
+        "frac_positive": 0.931,
+        "count": 29
       }
     ],
     "fail_threshold": 0.72,
@@ -157,62 +159,75 @@
     "n_test": 161,
     "n_resistant": 55,
     "n_susceptible": 106,
-    "no_call_rate": 0.0559,
-    "balanced_accuracy_called": 0.9209,
+    "no_call_rate": 0.0435,
+    "balanced_accuracy_called": 0.9212,
+    "answered_accuracy": 0.9351,
     "f1_called": 0.9057,
     "resistant_recall_called": 0.8727,
-    "susceptible_recall_called": 0.9691,
-    "auroc": 0.9221,
-    "pr_auc": null,
-    "brier_score": 0.0714,
+    "susceptible_recall_called": 0.9697,
+    "auroc": 0.9274,
+    "pr_auc": 0.8724,
+    "brier_score": 0.0682,
     "reliability": [
       {
         "bin_center": 0.05,
-        "mean_prob": 0.0575,
-        "frac_positive": 0.0595,
-        "count": 84
+        "mean_prob": 0.0506,
+        "frac_positive": 0.0667,
+        "count": 90
       },
       {
         "bin_center": 0.15,
-        "mean_prob": 0.1394,
-        "frac_positive": 0.1818,
-        "count": 11
+        "mean_prob": 0.129,
+        "frac_positive": 0.1,
+        "count": 10
       },
       {
         "bin_center": 0.25,
-        "mean_prob": 0.249,
-        "frac_positive": 0.0,
-        "count": 6
-      },
-      {
-        "bin_center": 0.35,
-        "mean_prob": 0.3411,
-        "frac_positive": 0.0,
-        "count": 3
-      },
-      {
-        "bin_center": 0.45,
-        "mean_prob": 0.4468,
+        "mean_prob": 0.2659,
         "frac_positive": 0.0,
         "count": 5
       },
       {
-        "bin_center": 0.65,
-        "mean_prob": 0.6612,
+        "bin_center": 0.35,
+        "mean_prob": 0.3382,
+        "frac_positive": 0.0,
+        "count": 2
+      },
+      {
+        "bin_center": 0.45,
+        "mean_prob": 0.4219,
         "frac_positive": 0.0,
         "count": 1
       },
       {
-        "bin_center": 0.85,
-        "mean_prob": 0.8542,
+        "bin_center": 0.55,
+        "mean_prob": 0.5061,
+        "frac_positive": 0.0,
+        "count": 1
+      },
+      {
+        "bin_center": 0.65,
+        "mean_prob": 0.6624,
+        "frac_positive": 0.0,
+        "count": 1
+      },
+      {
+        "bin_center": 0.75,
+        "mean_prob": 0.7935,
         "frac_positive": 1.0,
-        "count": 6
+        "count": 3
+      },
+      {
+        "bin_center": 0.85,
+        "mean_prob": 0.8798,
+        "frac_positive": 1.0,
+        "count": 5
       },
       {
         "bin_center": 0.95,
-        "mean_prob": 0.9597,
-        "frac_positive": 0.9333,
-        "count": 45
+        "mean_prob": 0.9512,
+        "frac_positive": 0.9302,
+        "count": 43
       }
     ],
     "fail_threshold": 0.72,
@@ -223,67 +238,68 @@
     "n_resistant": 103,
     "n_susceptible": 71,
     "no_call_rate": 0.046,
-    "balanced_accuracy_called": 0.932,
-    "f1_called": 0.951,
+    "balanced_accuracy_called": 0.9395,
+    "answered_accuracy": 0.9458,
+    "f1_called": 0.9557,
     "resistant_recall_called": 0.97,
-    "susceptible_recall_called": 0.8939,
-    "auroc": 0.9649,
-    "pr_auc": null,
-    "brier_score": 0.0582,
+    "susceptible_recall_called": 0.9091,
+    "auroc": 0.9626,
+    "pr_auc": 0.9676,
+    "brier_score": 0.0601,
     "reliability": [
       {
         "bin_center": 0.05,
-        "mean_prob": 0.063,
-        "frac_positive": 0.0364,
-        "count": 55
+        "mean_prob": 0.0743,
+        "frac_positive": 0.0417,
+        "count": 48
       },
       {
         "bin_center": 0.15,
-        "mean_prob": 0.1456,
-        "frac_positive": 0.0,
-        "count": 5
+        "mean_prob": 0.127,
+        "frac_positive": 0.0909,
+        "count": 11
       },
       {
         "bin_center": 0.25,
-        "mean_prob": 0.2606,
+        "mean_prob": 0.239,
+        "frac_positive": 0.0,
+        "count": 4
+      },
+      {
+        "bin_center": 0.35,
+        "mean_prob": 0.3271,
+        "frac_positive": 0.0,
+        "count": 2
+      },
+      {
+        "bin_center": 0.45,
+        "mean_prob": 0.4796,
         "frac_positive": 0.5,
         "count": 2
       },
       {
-        "bin_center": 0.35,
-        "mean_prob": 0.3468,
-        "frac_positive": 0.0,
-        "count": 3
-      },
-      {
-        "bin_center": 0.45,
-        "mean_prob": 0.4521,
+        "bin_center": 0.55,
+        "mean_prob": 0.5504,
         "frac_positive": 0.6667,
         "count": 3
       },
       {
-        "bin_center": 0.55,
-        "mean_prob": 0.5269,
-        "frac_positive": 0.5,
-        "count": 2
-      },
-      {
         "bin_center": 0.75,
-        "mean_prob": 0.7607,
-        "frac_positive": 0.4,
-        "count": 5
+        "mean_prob": 0.7632,
+        "frac_positive": 0.6667,
+        "count": 6
       },
       {
         "bin_center": 0.85,
-        "mean_prob": 0.8474,
-        "frac_positive": 1.0,
-        "count": 11
+        "mean_prob": 0.8701,
+        "frac_positive": 0.9286,
+        "count": 14
       },
       {
         "bin_center": 0.95,
-        "mean_prob": 0.9508,
-        "frac_positive": 0.9545,
-        "count": 88
+        "mean_prob": 0.9451,
+        "frac_positive": 0.9524,
+        "count": 84
       }
     ],
     "fail_threshold": 0.72,
