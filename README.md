@@ -1,6 +1,8 @@
 # AMRShield Sentinel
 
-Research Streamlit prototype for predicting antibiotic response in E. coli from genome-derived AMR marker features.
+Node.js/TypeScript web app that predicts antibiotic response in E. coli from
+genome-derived AMR marker features, backed by real calibrated LightGBM models
+served through a Python inference bridge.
 
 Output is tri-state: `likely_to_fail`, `likely_to_work`, or `no_call`. Every result includes probability, confidence, evidence category, target-gate status, and the required lab-confirmation warning.
 
@@ -8,26 +10,45 @@ Output is tri-state: `likely_to_fail`, `likely_to_work`, or `no_call`. Every res
 
 ## Architecture
 
+The frontend is a retro-framed / Tableau-style single-page app served by a small
+Node.js server. All real prediction happens in Python (trained LightGBM models +
+k-mer FASTA detector + live BV-BRC gene fetch); the Node server shells out to a
+standalone Python CLI over stdin/stdout.
+
 ```mermaid
 flowchart TD
-    A[Assembled E. coli FASTA] --> B{Raw DNA or annotated?}
-    B -->|raw nucleotide| C[Built-in k-mer detector vs NCBI AMR reference]
-    B -->|AMRFinderPlus installed| C2[Run amrfinder -n FASTA -O Escherichia]
-    B -->|annotated headers| C3[Parse gene/product headers]
-    D[Upload precomputed AMRFinderPlus TSV] --> E[Map to marker families]
-    F[BV-BRC genome ID demo path] --> G[Fetch genome_feature products]
-    C --> E
-    C2 --> E
-    C3 --> E
-    G --> E
-    E --> H[Map genes/mutations to 20 AMR marker families]
-    H --> I[Build 23 numeric model features]
-    I --> J[Target gate per antibiotic]
-    I --> K[Calibrated LightGBM models]
-    J --> L[Decision report]
-    K --> L
-    L --> M[Streamlit UI: prediction, metrics, data, safety]
+    UI[Browser SPA: retro window + Tableau data] -->|POST /api/analyse or /api/analyse-bvbrc| N[Node.js server]
+    N -->|spawn stdin/stdout JSON| P[scripts/predict_cli.py]
+    A[Assembled E. coli FASTA] --> P
+    F[BV-BRC genome id] --> P
+    T[AMRFinderPlus TSV] --> P
+    P --> C{Raw DNA or annotated?}
+    C -->|raw nucleotide| K1[Built-in k-mer detector vs NCBI AMR reference]
+    C -->|annotated headers| K2[Parse gene/product headers]
+    F --> K3[Fetch BV-BRC genome_feature products]
+    K1 --> H[Map to 20 AMR marker families]
+    K2 --> H
+    K3 --> H
+    H --> V[Build 23 numeric features]
+    V --> G[Target gate per antibiotic]
+    V --> M[Calibrated LightGBM models]
+    G --> R[Tri-state decision report]
+    M --> R
+    R -->|JSON| N --> UI
 ```
+
+### Run the app
+
+```bash
+pip install -r requirements.txt      # lightgbm, numpy, scikit-learn
+npm install
+npm run dev                          # builds TS, serves http://localhost:3000
+```
+
+The Node server calls `python` (override with `PYTHON_BIN`) to run
+`scripts/predict_cli.py`. API surface: `GET /api/config`, `GET /api/metrics`,
+`GET /api/bvbrc/training-dashboard`, `POST /api/analyse` (FASTA/TSV),
+`POST /api/analyse-bvbrc` (`{ "genome_id": "562.12960" }`).
 
 ## Raw FASTA to Genes (Built-in Detector)
 
@@ -78,7 +99,7 @@ Training is done as one binary model per antibiotic. The raw BV-BRC table has 92
 | Ceftriaxone | 803 | 399 | 404 | 161 | 55 | 106 | 964 |
 | Tetracycline | 703 | 414 | 289 | 174 | 103 | 71 | 877 |
 
-The committed training features are BV-BRC `genome_feature` product-name markers. For a stricter AMRFinderPlus rebuild, run AMRFinderPlus over the same genome assemblies and feed the TSV through the same marker parser used by `streamlit_app.py`.
+The committed training features are BV-BRC `genome_feature` product-name markers. For a stricter AMRFinderPlus rebuild, run AMRFinderPlus over the same genome assemblies and feed the TSV through the same marker parser used by `scripts/predict_cli.py`.
 
 ## End-to-End Process
 
@@ -111,11 +132,10 @@ The committed training features are BV-BRC `genome_feature` product-name markers
    - Metrics: AUROC, PR-AUC, Brier score, no-call rate, answered accuracy, balanced accuracy, resistant recall, susceptible recall.
    - Output: `artifacts/demo_metrics.json`.
 
-6. Serve Streamlit dashboard.
-   - Script: `streamlit run streamlit_app.py`
-   - Inputs: AMRFinderPlus TSV, FASTA with AMRFinderPlus when installed, BV-BRC genome ID, or demo annotated FASTA.
+6. Serve the web app.
+   - Command: `npm run dev` (Node server on `http://localhost:3000`), which calls `scripts/predict_cli.py` for real inference.
+   - Inputs: raw/annotated FASTA (built-in k-mer detector), AMRFinderPlus TSV, or BV-BRC genome ID.
    - Output: tri-state antibiotic report plus Tableau-style charts and safety disclaimer.
-   - Important: raw contig FASTA without gene/product annotations cannot be converted into AMR marker features by this app unless AMRFinderPlus is installed. In that case the app returns `no_call` instead of producing misleading repeated predictions.
 
 ## Feature Output Format
 
@@ -214,46 +234,43 @@ python scripts/04_evaluate.py
 Launch the app:
 
 ```bash
-streamlit run streamlit_app.py
+npm install
+npm run dev
 ```
 
-Then open `http://localhost:8501`.
+Then open `http://localhost:3000`.
 
-## Streamlit Inputs
+## App Inputs
 
-- Assembled FASTA: runs AMRFinderPlus if `amrfinder` is installed.
-- AMRFinderPlus TSV: upload precomputed AMRFinderPlus output.
-- BV-BRC Genome ID: fetches public genome feature annotations for demo/prototype use.
-- Demo annotated FASTA: built-in synthetic examples for quick UI testing.
-
-If every raw FASTA file appears to produce the same result, that means no AMR marker annotations were available. Use one of these paths:
-
-1. Install AMRFinderPlus and let the app run it.
-2. Run AMRFinderPlus outside the app and upload the TSV.
-3. Upload an annotated FASTA whose headers contain gene/product names.
+- **Raw or annotated FASTA** (Predict tab): raw nucleotide assemblies work via the built-in k-mer detector; annotated headers are parsed directly.
+- **BV-BRC Genome ID**: fetches live public genome-feature annotations and runs the real models (e.g. `562.12960`).
+- **AMRFinderPlus TSV**: precomputed AMRFinderPlus output (`POST /api/analyse` with `mode:"tsv"`).
 
 ## Repository Map
 
 ```text
 hackNation/
   scripts/
-    01_fetch_features.py
-    02_build_matrices.py
-    03_train.py
-    04_evaluate.py
-  streamlit_app.py
+    01_fetch_features.py          # BV-BRC gene fetch
+    02_build_matrices.py          # feature matrix + grouped split
+    03_train.py                   # LightGBM + calibration
+    04_evaluate.py                # metrics + per-group generalization
+    05_build_reference_index.py   # NCBI AMR k-mer index
+    predict_cli.py                # standalone inference (called by Node)
+  server/                         # Node.js API server
+    index.ts
+    pipeline/pythonBridge.ts      # spawns predict_cli.py
+    pipeline/metrics.ts
+    bvbrcData.ts
+  client/app.ts                   # browser SPA (retro + Tableau)
+  public/index.html public/styles.css
+  shared/types.ts
   requirements.txt
   artifacts/
-    demo_metrics.json
-    model_meta.json
-    models/
+    demo_metrics.json  model_meta.json  kmer_index.json  models/
   data/bvbrc/
-    feature_matrix.csv
-    labels.csv
-    splits.json
-    feature_columns.json
+    feature_matrix.csv  labels.csv  splits.json  feature_columns.json
   demo_samples/
-  client/ server/ public/ shared/   # original TypeScript prototype, not used by Streamlit path
 ```
 
 ## Safety Scope

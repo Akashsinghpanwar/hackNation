@@ -7,214 +7,174 @@
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <div class="scanline"></div>
-    <div class="shell">
-      <aside class="side-rail">
-        <div class="brand-mark">Start</div>
-        <button class="nav-button active" data-nav="upload" title="Upload">Upload</button>
-        <button class="nav-button" data-nav="results" title="Results">Results</button>
-        <button class="nav-button" data-nav="trust" title="Trust">Trust</button>
-        <button class="nav-button" data-nav="safety" title="Safety">Safety</button>
-      </aside>
+    <div class="scanline" aria-hidden="true"></div>
 
-      <main class="console">
-        <div class="app-titlebar">
-          <div class="title-left">
-            <span class="app-icon">AS</span>
-            <span>AMRShield Sentinel - Genome Firewall</span>
-          </div>
-          <div class="window-controls" aria-hidden="true">
-            <span>_</span><span>[]</span><span>x</span>
-          </div>
+    <div class="window">
+      <!-- retro titlebar -->
+      <div class="titlebar">
+        <div class="titlebar-left">
+          <span class="logo-chip">AS</span>
+          <span class="titlebar-name">AMRShield Sentinel</span>
+          <span class="titlebar-sub">// GENOME FIREWALL</span>
         </div>
-        <section class="hero-grid active" data-panel="upload">
-          <div class="hero-copy">
-            <p class="kicker">DEFENSIVE AI / GENOME FIREWALL / RESEARCH PROTOTYPE</p>
-            <h1>AMRShield Sentinel</h1>
-            <p class="lede">Upload a reconstructed bacterial genome and inspect antibiotic response predictions with calibrated confidence, evidence, and explicit no-call.</p>
-            <div class="notice" id="confirmation"></div>
-          </div>
-          <div class="hero-visual" aria-hidden="true">
-            <div class="terminal-art">
-              <div class="terminal-top">
-                <span>Genome Console</span>
+        <div class="titlebar-right">
+          <span class="brand-badge">HackNation · Challenge 06</span>
+          <span class="brand-badge alt">Built with OpenAI</span>
+          <span class="win-btns" aria-hidden="true"><i>_</i><i>▢</i><i>✕</i></span>
+        </div>
+      </div>
+
+      <!-- horizontal top nav (retro raised tabs) -->
+      <nav class="tabbar">
+        <button class="tab active" data-nav="predict">Predict</button>
+        <button class="tab" data-nav="results">Results</button>
+        <button class="tab" data-nav="metrics">Model Metrics</button>
+        <button class="tab" data-nav="trust">Training Data</button>
+        <button class="tab" data-nav="safety">Safety</button>
+        <span class="tab-status" id="runStatus">Ready</span>
+      </nav>
+
+      <main class="stage">
+        <div class="disclaimer" id="confirmation"></div>
+
+        <!-- ============ PREDICT ============ -->
+        <section class="panel-grid active" data-panel="predict">
+          <div class="card intake">
+            <div class="card-head"><h2>Genome Intake</h2><span class="mono" id="detectorStatus">detector: --</span></div>
+
+            <div class="seg" id="modeSeg">
+              <button class="seg-btn active" data-mode="fasta">FASTA</button>
+              <button class="seg-btn" data-mode="bvbrc">BV-BRC ID</button>
+            </div>
+
+            <div data-modepanel="fasta">
+              <label class="lbl" for="species">Species scope</label>
+              <select id="species"></select>
+
+              <label class="drop" for="fastaFile">
+                <input id="fastaFile" type="file" accept=".fa,.fasta,.fna,.ffn,.faa,.txt">
+                <span>Drop or select FASTA (raw genome supported)</span>
+                <small id="fileStatus">No file loaded</small>
+              </label>
+
+              <label class="lbl" for="sequencePreview">Or paste sequence / demo buffer</label>
+              <textarea id="sequencePreview" spellcheck="false" placeholder=">contig_1&#10;ACGTACGT..."></textarea>
+
+              <div class="sample-row">
+                <button data-sample="mdr_ecoli.fasta">MDR sample</button>
+                <button data-sample="cipro_resistant_ecoli.fasta">Cipro-R sample</button>
+                <button data-sample="susceptible_ecoli.fasta">Susceptible sample</button>
               </div>
-              <pre>
-AMRSHIELD SENTINEL // GENOME FIREWALL
--------------------------------------
-> FASTA_INPUT       READY
-> AMR_MARKERS       STANDBY
-> TARGET_GATE       ARMED
-> NO_CALL_POLICY    ACTIVE
-
-ACGT ACGT TTA CCGT AACT
-GCTA TTAC GYRA_S83L ----
-TETA ---- BLATEM-1 ----
-
-[ DEFENSIVE MODE ONLY ]
-              </pre>
+              <button id="analyseButton" class="primary">Analyze Genome</button>
             </div>
-            <div class="crt-readout">
-              <span>SEQ BUS</span>
-              <strong>ONLINE</strong>
+
+            <div data-modepanel="bvbrc" hidden>
+              <label class="lbl" for="genomeId">BV-BRC genome id</label>
+              <input id="genomeId" type="text" placeholder="562.12960">
+              <p class="hint">Fetches live gene annotations from the public BV-BRC API and runs the real models.</p>
+              <div class="sample-row">
+                <button data-gid="562.12960">562.12960</button>
+                <button data-gid="562.11347">562.11347</button>
+                <button data-gid="562.65608">562.65608</button>
+              </div>
+              <button id="analyseBvbrcButton" class="primary">Fetch &amp; Analyze</button>
             </div>
           </div>
-        </section>
 
-        <section class="workbench active" data-panel="upload">
-          <div class="panel upload-panel">
-            <div class="panel-header">
-              <h2>Genome Intake</h2>
-              <span id="runStatus">Awaiting FASTA input</span>
-            </div>
-            <label class="field-label" for="species">Species Scope</label>
-            <select id="species"></select>
-            <label class="drop-zone" for="fastaFile">
-              <input id="fastaFile" type="file" accept=".fa,.fasta,.fna">
-              <span>Drop or select FASTA</span>
-              <small id="fileStatus">No file loaded</small>
-            </label>
-            <label class="field-label" for="sequencePreview">Manual / demo sequence buffer</label>
-            <textarea id="sequencePreview" spellcheck="false" placeholder=">sample&#10;ACGTACGT..."></textarea>
-            <div class="sample-row">
-              <button data-sample="likely_fail_sample.fasta">Fail sample</button>
-              <button data-sample="likely_work_sample.fasta">Work sample</button>
-              <button data-sample="no_call_sample.fasta">No-call sample</button>
-            </div>
-            <button id="analyseButton" class="primary-action">Analyze Genome</button>
-          </div>
-
-          <div class="panel scope-panel">
-            <div class="panel-header">
-              <h2>Configured Scope</h2>
-              <span id="modelVersion"></span>
-            </div>
-            <div class="scope-line">
-              <span>Species</span>
-              <strong id="speciesScope"></strong>
-            </div>
+          <div class="card scope">
+            <div class="card-head"><h2>Configured Scope</h2><span class="mono" id="modelVersion"></span></div>
+            <div class="scope-row"><span>Species</span><strong id="speciesScope"></strong></div>
+            <div class="scope-row"><span>Pipeline</span><strong>k-mer detect → LightGBM → target gate → no-call</strong></div>
             <ul class="drug-list" id="drugList"></ul>
+            <pre class="console">AMRSHIELD SENTINEL // GENOME FIREWALL
+-------------------------------------
+&gt; FASTA_INPUT       READY
+&gt; AMR_MARKERS       STANDBY
+&gt; TARGET_GATE       ARMED
+&gt; NO_CALL_POLICY    ACTIVE
+[ DEFENSIVE MODE ONLY ]</pre>
           </div>
         </section>
 
-        <section class="workbench" data-panel="results">
-          <div class="stat-grid">
-            <div><span>Run</span><strong id="runId">--</strong></div>
-            <div><span>QC</span><strong id="qcStatus">--</strong></div>
-            <div><span>Markers</span><strong id="markerCount">0</strong></div>
-            <div><span>Fail</span><strong id="failCount">0</strong></div>
-            <div><span>Work</span><strong id="workCount">0</strong></div>
-            <div><span>No-call</span><strong id="noCallCount">0</strong></div>
+        <!-- ============ RESULTS ============ -->
+        <section class="panel-stack" data-panel="results">
+          <div class="kpi-row">
+            <div class="kpi"><span>Source</span><strong id="kpiSource">--</strong></div>
+            <div class="kpi"><span>Genes detected</span><strong id="kpiGenes">0</strong></div>
+            <div class="kpi accent-red"><span>Likely to fail</span><strong id="failCount">0</strong></div>
+            <div class="kpi accent-green"><span>Likely to work</span><strong id="workCount">0</strong></div>
+            <div class="kpi accent-grey"><span>No-call</span><strong id="noCallCount">0</strong></div>
           </div>
-          <div class="panel table-panel">
-            <div class="panel-header">
-              <h2>Resistance Firewall Matrix</h2>
-              <div>
-                <button id="downloadJson">JSON</button>
-                <button id="downloadCsv">CSV</button>
-              </div>
+
+          <div class="card">
+            <div class="card-head"><h2>Resistance Firewall Matrix</h2>
+              <div class="btn-row"><button id="downloadJson">JSON</button><button id="downloadCsv">CSV</button></div>
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Antibiotic</th>
-                  <th>Decision</th>
-                  <th>Confidence</th>
-                  <th>Evidence</th>
-                  <th>Markers</th>
-                  <th>Target</th>
-                </tr>
-              </thead>
-              <tbody id="resultTable"></tbody>
-            </table>
+            <div id="barChart" class="bar-chart"></div>
           </div>
-          <div id="evidenceDeck" class="evidence-deck"></div>
+
+          <div id="evidenceDeck" class="deck"></div>
+
+          <div class="card">
+            <div class="card-head"><h2>Detected AMR Markers</h2><span class="mono">reference k-mer / annotation</span></div>
+            <div id="geneChips" class="chips"></div>
+          </div>
         </section>
 
-        <section class="workbench" data-panel="trust">
-          <div class="stat-grid training-stats">
-            <div><span>BV-BRC Rows</span><strong id="bvRows">--</strong></div>
-            <div><span>Unique Genomes</span><strong id="bvGenomes">--</strong></div>
-            <div><span>Taxon</span><strong id="bvTaxon">--</strong></div>
-            <div><span>Evidence</span><strong id="bvEvidence">--</strong></div>
-          </div>
-          <div class="panel table-panel">
-            <div class="panel-header">
-              <h2>BV-BRC Training Labels</h2>
-              <span id="bvGenerated">Waiting for local dataset</span>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Antibiotic</th>
-                  <th>Resistant</th>
-                  <th>Susceptible</th>
-                  <th>Total</th>
-                  <th>Unique Genomes</th>
-                </tr>
-              </thead>
-              <tbody id="bvSummaryTable"></tbody>
-            </table>
-          </div>
-          <div class="panel table-panel">
-            <div class="panel-header">
-              <h2>Training Row Sample</h2>
-              <span>Joined AMR labels + genome metadata</span>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Genome</th>
-                  <th>Drug</th>
-                  <th>Label</th>
-                  <th>Quality</th>
-                  <th>Group</th>
-                  <th>Method</th>
-                </tr>
-              </thead>
-              <tbody id="bvSampleTable"></tbody>
-            </table>
-          </div>
-          <div class="panel">
-            <div class="panel-header">
-              <h2>Trust Dashboard</h2>
-              <span>Grouped split demo metrics</span>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Drug</th>
-                  <th>Balanced Acc.</th>
-                  <th>Resistant Recall</th>
-                  <th>Susceptible Recall</th>
-                  <th>PR-AUC</th>
-                  <th>Brier</th>
-                  <th>No-call</th>
-                </tr>
-              </thead>
+        <!-- ============ METRICS ============ -->
+        <section class="panel-stack" data-panel="metrics">
+          <div class="kpi-row" id="metricKpis"></div>
+          <div class="card">
+            <div class="card-head"><h2>Held-out Performance</h2><span class="mono">grouped split</span></div>
+            <table class="grid">
+              <thead><tr><th>Drug</th><th>AUROC</th><th>PR-AUC</th><th>Bal. Acc</th><th>Resist. recall</th><th>Suscept. recall</th><th>Brier</th><th>No-call</th></tr></thead>
               <tbody id="metricsTable"></tbody>
             </table>
           </div>
-          <div class="panel chart-panel">
-            <div class="panel-header">
-              <h2>Reliability Plot</h2>
-              <span>Confidence vs observed accuracy</span>
-            </div>
-            <svg viewBox="0 0 540 300" role="img" aria-label="Reliability plot">
-              <line x1="50" y1="260" x2="500" y2="260"></line>
-              <line x1="50" y1="260" x2="50" y2="30"></line>
-              <line class="ideal" x1="260" y1="150" x2="470" y2="40"></line>
+          <div class="card">
+            <div class="card-head"><h2>Generalization by Genetic Group</h2><span class="mono">overall vs within-lineage AUROC</span></div>
+            <div id="genChart" class="bar-chart"></div>
+            <p class="hint">A large gap means the overall score leans on lineage prevalence rather than per-sample sequence signal.</p>
+          </div>
+          <div class="card chart-card">
+            <div class="card-head"><h2>Reliability Plot</h2><span class="mono" id="relDrug">ampicillin</span></div>
+            <svg viewBox="0 0 540 300" role="img" aria-label="Reliability plot" id="relSvg">
+              <line x1="50" y1="260" x2="500" y2="260" class="axis"></line>
+              <line x1="50" y1="260" x2="50" y2="30" class="axis"></line>
+              <line class="ideal" x1="50" y1="260" x2="470" y2="40"></line>
               <polyline id="reliabilityPolyline"></polyline>
             </svg>
           </div>
         </section>
 
-        <section class="workbench" data-panel="safety">
-          <div class="panel safety-panel">
-            <div class="panel-header">
-              <h2>Safety Governor</h2>
-              <span>Defensive by construction</span>
-            </div>
+        <!-- ============ TRAINING DATA ============ -->
+        <section class="panel-stack" data-panel="trust">
+          <div class="kpi-row">
+            <div class="kpi"><span>BV-BRC rows</span><strong id="bvRows">--</strong></div>
+            <div class="kpi"><span>Unique genomes</span><strong id="bvGenomes">--</strong></div>
+            <div class="kpi"><span>Taxon</span><strong id="bvTaxon">--</strong></div>
+            <div class="kpi"><span>Evidence</span><strong id="bvEvidence">--</strong></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>BV-BRC Training Labels</h2><span class="mono" id="bvGenerated">waiting for local dataset</span></div>
+            <table class="grid">
+              <thead><tr><th>Antibiotic</th><th>Resistant</th><th>Susceptible</th><th>Total</th><th>Unique Genomes</th></tr></thead>
+              <tbody id="bvSummaryTable"></tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>Training Row Sample</h2><span class="mono">joined AMR labels + metadata</span></div>
+            <table class="grid">
+              <thead><tr><th>Genome</th><th>Drug</th><th>Label</th><th>Quality</th><th>Group</th><th>Method</th></tr></thead>
+              <tbody id="bvSampleTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ============ SAFETY ============ -->
+        <section class="panel-stack" data-panel="safety">
+          <div class="card">
+            <div class="card-head"><h2>Safety Governor</h2><span class="mono">defensive by construction</span></div>
             <ul class="safety-list">
               <li>Predicts and explains resistance that may already exist.</li>
               <li>Does not design, edit, optimize, strengthen, or synthesize organisms.</li>
@@ -222,12 +182,8 @@ TETA ---- BLATEM-1 ----
               <li>Returns no-call for weak, conflicting, unsupported, or low-quality evidence.</li>
               <li>Separates known biological markers from statistical associations.</li>
             </ul>
-            <pre>POST /api/analyse
-{
-  "species": "Escherichia coli",
-  "fileName": "sample.fasta",
-  "content": "&gt;sample..."
-}</pre>
+            <pre class="console">POST /api/analyse         { species, fileName, content }
+POST /api/analyse-bvbrc   { genome_id: "562.12960" }</pre>
           </div>
         </section>
       </main>

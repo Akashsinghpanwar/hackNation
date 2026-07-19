@@ -2,9 +2,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { extname, join, normalize } from "node:path";
-import { analyseFasta } from "./pipeline/analyse.js";
-import { FastaValidationError } from "./pipeline/fasta.js";
-import { loadConfig, loadDemoMetrics, rootDir } from "./config.js";
+import { runInference } from "./pipeline/pythonBridge.js";
+import { buildMetricsPayload } from "./pipeline/metrics.js";
+import { loadConfig, rootDir } from "./config.js";
 import { loadBvbrcTrainingDashboard } from "./bvbrcData.js";
 
 const port = Number(process.env.PORT ?? 3000);
@@ -67,7 +67,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (request.method === "GET" && url.pathname === "/api/metrics") {
-    sendJson(response, 200, loadDemoMetrics());
+    sendJson(response, 200, buildMetricsPayload());
     return;
   }
 
@@ -86,7 +86,10 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 
   if (request.method === "GET" && url.pathname.startsWith("/api/demo-sample/")) {
     const sample = url.pathname.split("/").pop() ?? "";
-    const allowed = new Set(["likely_fail_sample.fasta", "likely_work_sample.fasta", "no_call_sample.fasta"]);
+    const allowed = new Set([
+      "mdr_ecoli.fasta", "cipro_resistant_ecoli.fasta", "susceptible_ecoli.fasta",
+      "likely_fail_sample.fasta", "likely_work_sample.fasta", "no_call_sample.fasta"
+    ]);
     if (!allowed.has(sample)) {
       sendJson(response, 404, { error: "Unknown demo sample" });
       return;
@@ -98,12 +101,27 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 
   if (request.method === "POST" && url.pathname === "/api/analyse") {
     try {
-      const body = await readRequestJson<{ species: string; fileName: string; content: string }>(request);
-      const result = analyseFasta(body.content, body.fileName, body.species);
+      const body = await readRequestJson<{ species: string; fileName: string; content: string; mode?: string }>(request);
+      const mode = body.mode === "tsv" ? "tsv" : "fasta";
+      const result = await runInference({ mode, species: body.species, fileName: body.fileName, content: body.content });
       sendJson(response, 200, result);
     } catch (error) {
-      const status = error instanceof FastaValidationError ? 400 : 500;
-      sendJson(response, status, { error: error instanceof Error ? error.message : "Unknown error" });
+      sendJson(response, 500, { error: error instanceof Error ? error.message : "Unknown error" });
+    }
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/analyse-bvbrc") {
+    try {
+      const body = await readRequestJson<{ species?: string; genome_id: string }>(request);
+      if (!body.genome_id || !/^\d+\.\d+$/.test(body.genome_id.trim())) {
+        sendJson(response, 400, { error: "Provide a BV-BRC genome id like 562.12960." });
+        return;
+      }
+      const result = await runInference({ mode: "bvbrc", species: body.species ?? "Escherichia coli", genome_id: body.genome_id.trim() });
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, 500, { error: error instanceof Error ? error.message : "Unknown error" });
     }
     return;
   }

@@ -1,5 +1,3 @@
 lightgbm
 numpy
-plotly
 scikit-learn
-streamlit

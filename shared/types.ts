@@ -64,11 +64,16 @@ export interface AntibioticPrediction {
   reason_codes: string[];
   explanation: string;
   lab_confirmation_required: boolean;
+  drug_class?: string;
+  target?: string;
 }
 
 export interface AnalysisResult {
   run_id: string;
   species: string;
+  source?: string;
+  detected_genes?: string[];
+  kmer_count?: number;
   qc: GenomeQC;
   markers: Marker[];
   predictions: AntibioticPrediction[];
