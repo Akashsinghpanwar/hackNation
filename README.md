@@ -37,7 +37,7 @@ and stop at a held-out test AUROC slide. This build does neither:
    per-genetic-group AUROC collapse and its higher no-call rate — a rare
    instance of a hackathon project reporting its own model's failure mode
    instead of only the headline number.
-5. **Pluggable confidence engine and curated, ground-truth-backed demo set.**
+5. **Modular confidence engine and curated, ground-truth-backed demo set.**
    Swapping the confidence engine (`threshold` vs `entropy`) is a one-line env
    var, and the demo genomes used for live presentation aren't synthetic
    examples — they're real BV-BRC genomes selected specifically because their
