@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: amrshield-sentinel
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/config
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Optional — only needed for the AI narrative/voice layer (Results tab).
+      # Set this in the Render dashboard (Environment tab), never commit it.
+      - key: OPENAI_API_KEY
+        sync: false
