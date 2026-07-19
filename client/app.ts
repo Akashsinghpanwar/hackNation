@@ -154,8 +154,12 @@ function wfStepShow(i: number): void {
   ($("#wfProgressFill") as HTMLElement).style.width = `${((i + 1) / WF_STEPS.length) * 100}%`;
 }
 
+let loaderStartedAt = 0;
+let loaderTickTimer: number | null = null;
+
 function startLoader(title: string): void {
   if (wfTimer !== null) window.clearTimeout(wfTimer);
+  if (loaderTickTimer !== null) { window.clearInterval(loaderTickTimer); loaderTickTimer = null; }
   $("#loaderTitle").textContent = title;
   wfIndex = -1;
   document.querySelectorAll<HTMLElement>(".wf-node").forEach((n) => n.classList.remove("active", "done"));
@@ -164,23 +168,50 @@ function startLoader(title: string): void {
   $("#loaderCaption").textContent = "Starting...";
   ($("#loaderOverlay") as HTMLElement).hidden = false;
   document.body.style.overflow = "hidden";
+  loaderStartedAt = Date.now();
+
+  // The fixed step-by-step animation below only covers the first ~6s. Real
+  // inference (especially the k-mer scan on a raw genome, on free-tier
+  // hosting with throttled CPU) commonly runs 20-60s+. Previously the
+  // progress bar hit 100% and the caption froze the instant the last
+  // animated step showed, then sat completely still for the rest of the
+  // real wait — indistinguishable from a hang. Cap the animated portion at
+  // 92% and keep the caption ticking with elapsed time until finishLoader()
+  // actually fires, so there's always visible, honest progress.
   const advance = (): void => {
-    if (wfIndex >= WF_STEPS.length - 1) { wfTimer = null; return; }
+    if (wfIndex >= WF_STEPS.length - 1) {
+      wfTimer = null;
+      startElapsedTicker();
+      return;
+    }
     wfStepShow(wfIndex + 1);
+    ($("#wfProgressFill") as HTMLElement).style.width = `${Math.min(92, ((wfIndex + 1) / WF_STEPS.length) * 100)}%`;
     wfTimer = window.setTimeout(advance, 780);
   };
   advance();
 }
 
+function startElapsedTicker(): void {
+  const tick = (): void => {
+    const elapsed = Math.round((Date.now() - loaderStartedAt) / 1000);
+    const note = elapsed >= 15 ? " (free-tier hosting can take up to a minute on a cold start)" : "";
+    $("#loaderCaption").textContent = `Still running model inference — ${elapsed}s elapsed${note}`;
+  };
+  tick();
+  loaderTickTimer = window.setInterval(tick, 1000);
+}
+
 function finishLoader(): void {
   if (wfTimer !== null) { window.clearTimeout(wfTimer); wfTimer = null; }
+  if (loaderTickTimer !== null) { window.clearInterval(loaderTickTimer); loaderTickTimer = null; }
   document.querySelectorAll<HTMLElement>(".wf-node").forEach((n) => {
     n.classList.remove("active");
     n.classList.add("done");
   });
   document.querySelectorAll<HTMLElement>(".wf-link").forEach((l) => l.classList.add("fill"));
   ($("#wfProgressFill") as HTMLElement).style.width = "100%";
-  $("#loaderCaption").textContent = "Pipeline complete.";
+  const totalElapsed = Math.round((Date.now() - loaderStartedAt) / 1000);
+  $("#loaderCaption").textContent = `Pipeline complete (${totalElapsed}s).`;
   window.setTimeout(() => {
     ($("#loaderOverlay") as HTMLElement).hidden = true;
     document.body.style.overflow = "";
