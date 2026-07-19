@@ -17,7 +17,7 @@ and stop at a held-out test AUROC slide. This build does neither:
    tools requires BLAST or AMRFinderPlus installed and on `PATH`. This app ships a
    pure-Python MinHash k-mer index (~1.5 MB, committed) so a raw, unannotated
    assembly gets real gene-family calls with no external binary, no internet
-   access, and no setup step, `pip install` and go.
+   access and no setup step, `pip install` and go.
 2. **Two independent gene-detection paths, both separately validated against real
    lab data**, not just the training split: the offline k-mer detector and the
    live BV-BRC `genome_feature` fetch. See "Independent Validation" below,
@@ -28,13 +28,13 @@ and stop at a held-out test AUROC slide. This build does neither:
    "I don't know" when the calibrated probability lands in the uncertain band or
    the resistance target can't be confirmed, instead of always returning a
    confident-looking binary answer. Validation confirms this abstention behavior
-   is *correct*, not just present — no-call cases disproportionately land on
+   is *correct*, not just present, no-call cases disproportionately land on
    genomes where a forced guess would likely have been wrong.
 4. **Transparent about the model's real weak point.** Ciprofloxacin resistance
    in E. coli is driven mainly by `gyrA`/`parC` point mutations, which a
    gene-presence feature vector structurally cannot see. Rather than hide this,
    the README and the app's own metrics tab report ciprofloxacin's
-   per-genetic-group AUROC collapse and its higher no-call rate — a rare
+   per-genetic-group AUROC collapse and its higher no-call rate, a rare
    instance of a hackathon project reporting its own model's failure mode
    instead of only the headline number.
 5. **Modular confidence engine and curated, ground-truth-backed demo set.**
