@@ -16,12 +16,14 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 import pickle
 import re
 import sys
 import urllib.parse
 import urllib.request
 import warnings
+from math import log2
 from pathlib import Path
 
 import numpy as np
@@ -254,8 +256,74 @@ def target_status(ab: str, targets: set[str], species_supported: bool) -> tuple[
     return "target_unknown", False
 
 
+# ---------- confidence engine (pluggable) ----------
+# A confidence engine turns a model probability into a tri-state decision + a
+# confidence score. Swap engines via configs/app_config.json ("decision_policy":
+# {"engine": ...}) or the CONFIDENCE_ENGINE env var. New engine = one subclass +
+# one entry in ENGINES; nothing else in the pipeline changes.
+CONFIG_PATH = ROOT / "configs" / "app_config.json"
+
+
+def load_decision_policy() -> dict:
+    policy = {"engine": "threshold", "fail_threshold": FAIL_THRESHOLD, "work_threshold": WORK_THRESHOLD}
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as fh:
+            policy.update(json.load(fh).get("decision_policy", {}))
+    except Exception:
+        pass
+    policy["engine"] = os.getenv("CONFIDENCE_ENGINE", policy.get("engine", "threshold"))
+    return policy
+
+
+class ThresholdEngine:
+    """Default: fixed fail/work thresholds + symmetric max-probability confidence."""
+    name = "threshold"
+
+    def __init__(self, fail_threshold: float, work_threshold: float):
+        self.fail = fail_threshold
+        self.work = work_threshold
+
+    def confidence(self, prob: float) -> float:
+        return max(prob, 1.0 - prob)
+
+    def decide(self, prob: float, target_ok: bool) -> dict:
+        reasons: list[str] = []
+        if prob >= self.fail:
+            decision = "likely_to_fail"
+            reasons.append("resistance_probability_above_fail_threshold")
+        elif prob <= self.work:
+            decision = "likely_to_work"
+            reasons.append("resistance_probability_below_work_threshold")
+        else:
+            decision = "no_call"
+            reasons.append("probability_in_no_call_region")
+        if decision == "likely_to_work" and not target_ok:
+            decision = "no_call"
+            reasons.append("target_not_confirmed")
+        return {"decision": decision, "confidence": self.confidence(prob), "reason_codes": reasons}
+
+
+class EntropyEngine(ThresholdEngine):
+    """Same decision boundaries, but confidence = 1 - binary entropy of the probability."""
+    name = "entropy"
+
+    def confidence(self, prob: float) -> float:
+        p = min(max(prob, 1e-9), 1.0 - 1e-9)
+        return round(1.0 + (p * log2(p) + (1.0 - p) * log2(1.0 - p)), 6)  # 1 - H(p)
+
+
+ENGINES: dict[str, type[ThresholdEngine]] = {"threshold": ThresholdEngine, "entropy": EntropyEngine}
+
+
+def get_engine(policy: dict) -> ThresholdEngine:
+    cls = ENGINES.get(policy.get("engine", "threshold"), ThresholdEngine)
+    return cls(float(policy.get("fail_threshold", FAIL_THRESHOLD)),
+               float(policy.get("work_threshold", WORK_THRESHOLD)))
+
+
 def predict(genes: set[str], targets: set[str], models: dict, feature_cols: list[str],
-            species_supported: bool, genome_length_z: float, contigs_z: float) -> list[dict]:
+            species_supported: bool, genome_length_z: float, contigs_z: float,
+            engine: ThresholdEngine) -> list[dict]:
     base_vector = build_feature_vector(genes, feature_cols, genome_length_z, contigs_z)
     predictions = []
     for ab in ANTIBIOTICS:
@@ -268,22 +336,12 @@ def predict(genes: set[str], targets: set[str], models: dict, feature_cols: list
         if pkg.get("use_genetic_group"):
             vector = np.append(vector, pkg.get("gg_encoding", {}).get("_missing", 0.5))
         prob = float(pkg["model"].predict_proba(vector.reshape(1, -1))[0, 1])
-        confidence = max(prob, 1.0 - prob)
         status, target_ok = target_status(ab, targets, species_supported)
         matched = sorted(KNOWN_MARKERS[ab] & genes)
-        reason: list[str] = []
-        if prob >= FAIL_THRESHOLD:
-            decision = "likely_to_fail"
-            reason.append("resistance_probability_above_fail_threshold")
-        elif prob <= WORK_THRESHOLD:
-            decision = "likely_to_work"
-            reason.append("resistance_probability_below_work_threshold")
-        else:
-            decision = "no_call"
-            reason.append("probability_in_no_call_region")
-        if decision == "likely_to_work" and not target_ok:
-            decision = "no_call"
-            reason.append("target_not_confirmed")
+        verdict = engine.decide(prob, target_ok)
+        decision = verdict["decision"]
+        confidence = verdict["confidence"]
+        reason = list(verdict["reason_codes"])
         if matched:
             evidence = "known resistance gene or mutation detected"
         elif decision == "no_call":
@@ -348,6 +406,7 @@ def handle(req: dict) -> dict:
     models = load_models()
     feature_cols = load_feature_cols()
     stats = load_norm_stats()
+    engine = get_engine(load_decision_policy())
 
     genes: set[str] = set()
     targets: set[str] = set()
@@ -399,7 +458,8 @@ def handle(req: dict) -> dict:
             genome_length_z = (bases - float(stats.get("length_mean", 0))) / max(float(stats.get("length_std", 1)), 1)
             contigs_z = (contigs - float(stats.get("contigs_mean", 0))) / max(float(stats.get("contigs_std", 1)), 1)
 
-    predictions = predict(genes, targets, models, feature_cols, species_supported, genome_length_z, contigs_z)
+    predictions = predict(genes, targets, models, feature_cols, species_supported,
+                          genome_length_z, contigs_z, engine)
 
     warnings_list: list[str] = []
     if not species_supported:
@@ -420,6 +480,7 @@ def handle(req: dict) -> dict:
         "run_id": run_id,
         "species": species,
         "source": source,
+        "confidence_engine": engine.name,
         "detected_genes": sorted(genes),
         "kmer_count": kmer_count,
         "qc": {

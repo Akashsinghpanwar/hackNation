@@ -50,6 +50,23 @@ The Node server calls `python` (override with `PYTHON_BIN`) to run
 `GET /api/bvbrc/training-dashboard`, `POST /api/analyse` (FASTA/TSV),
 `POST /api/analyse-bvbrc` (`{ "genome_id": "562.12960" }`).
 
+### Pluggable confidence engine
+
+The component that turns a model probability into a **tri-state decision + confidence
+score** is a swappable strategy. Each engine implements `decide(prob, target_ok)` and
+`confidence(prob)`; the active one is chosen by `configs/app_config.json`
+(`"decision_policy": { "engine": "threshold", "fail_threshold": 0.72, "work_threshold": 0.28 }`)
+or the `CONFIDENCE_ENGINE` env var. Built-in engines: `threshold` (default, symmetric
+max-probability confidence) and `entropy` (same boundaries, `1 - H(p)` confidence). The
+active engine name is returned in every response as `confidence_engine`. Adding a new
+engine (e.g. conformal prediction, learned abstention) is one subclass in
+`scripts/predict_cli.py` plus one entry in the `ENGINES` map — nothing else in the
+pipeline, server, or UI changes.
+
+```bash
+CONFIDENCE_ENGINE=entropy npm run dev   # swap engine without code changes
+```
+
 ## Raw FASTA to Genes (Built-in Detector)
 
 A raw genome assembly (just `>contig` headers and DNA) carries no gene names, so it

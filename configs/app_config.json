@@ -40,6 +40,11 @@
       "work_threshold": 0.26
     }
   ],
+  "decision_policy": {
+    "engine": "threshold",
+    "fail_threshold": 0.72,
+    "work_threshold": 0.28
+  },
   "safety": {
     "low_confidence_cutoff": 0.60,
     "ood_marker_cutoff": 0.20,
