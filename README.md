@@ -10,14 +10,15 @@ Output is tri-state: `likely_to_fail`, `likely_to_work`, or `no_call`. Every res
 
 ## Architecture
 
-The frontend is a retro-framed / Tableau-style single-page app served by a small
+The frontend is a custom retro-framed analytics dashboard (a single-page app built
+with plain HTML/CSS/TypeScript — no external BI tool) served by a small
 Node.js server. All real prediction happens in Python (trained LightGBM models +
 k-mer FASTA detector + live BV-BRC gene fetch); the Node server shells out to a
 standalone Python CLI over stdin/stdout.
 
 ```mermaid
 flowchart TD
-    UI[Browser SPA: retro window + Tableau data] -->|POST /api/analyse or /api/analyse-bvbrc| N[Node.js server]
+    UI[Browser SPA: retro window + dashboard charts] -->|POST /api/analyse or /api/analyse-bvbrc| N[Node.js server]
     N -->|spawn stdin/stdout JSON| P[scripts/predict_cli.py]
     A[Assembled E. coli FASTA] --> P
     F[BV-BRC genome id] --> P
@@ -152,7 +153,7 @@ The committed training features are BV-BRC `genome_feature` product-name markers
 6. Serve the web app.
    - Command: `npm run dev` (Node server on `http://localhost:3000`), which calls `scripts/predict_cli.py` for real inference.
    - Inputs: raw/annotated FASTA (built-in k-mer detector), AMRFinderPlus TSV, or BV-BRC genome ID.
-   - Output: tri-state antibiotic report plus Tableau-style charts and safety disclaimer.
+   - Output: tri-state antibiotic report plus dashboard charts (KPI tiles, probability bars, reliability plot) and safety disclaimer.
 
 ## Feature Output Format
 
@@ -279,7 +280,7 @@ hackNation/
     pipeline/pythonBridge.ts      # spawns predict_cli.py
     pipeline/metrics.ts
     bvbrcData.ts
-  client/app.ts                   # browser SPA (retro + Tableau)
+  client/app.ts                   # browser SPA (retro shell + dashboard UI)
   public/index.html public/styles.css
   shared/types.ts
   requirements.txt
