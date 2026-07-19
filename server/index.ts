@@ -5,6 +5,7 @@ import { extname, join, normalize } from "node:path";
 import { analyseFasta } from "./pipeline/analyse.js";
 import { FastaValidationError } from "./pipeline/fasta.js";
 import { loadConfig, loadDemoMetrics, rootDir } from "./config.js";
+import { loadBvbrcTrainingDashboard } from "./bvbrcData.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const publicDir = join(rootDir, "public");
@@ -67,6 +68,19 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 
   if (request.method === "GET" && url.pathname === "/api/metrics") {
     sendJson(response, 200, loadDemoMetrics());
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/bvbrc/training-dashboard") {
+    try {
+      sendJson(response, 200, await loadBvbrcTrainingDashboard());
+    } catch (error) {
+      sendJson(response, 404, {
+        error: error instanceof Error
+          ? `BV-BRC training data is not available yet: ${error.message}`
+          : "BV-BRC training data is not available yet."
+      });
+    }
     return;
   }
 

@@ -493,6 +493,10 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.training-stats {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -517,6 +521,13 @@ th {
 
 td {
   color: #1d2f3d;
+}
+
+td small {
+  display: block;
+  color: var(--muted);
+  margin-top: 3px;
+  max-width: 360px;
 }
 
 tr:nth-child(even) td {

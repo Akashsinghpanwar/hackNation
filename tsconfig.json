@@ -13,5 +13,5 @@
     "resolveJsonModule": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["client/**/*.ts", "server/**/*.ts", "shared/**/*.ts"]
+  "include": ["client/**/*.ts", "server/**/*.ts", "shared/**/*.ts", "scripts/**/*.ts"]
 }

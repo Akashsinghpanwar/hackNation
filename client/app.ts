@@ -2,6 +2,12 @@ import type { AnalysisResult, AppConfig } from "../shared/types.js";
 
 const state: { config?: AppConfig; result?: AnalysisResult; selectedFile?: { fileName: string; content: string } } = {};
 
+interface BvbrcTrainingDashboard {
+  manifest: Record<string, unknown>;
+  summary: Array<Record<string, string>>;
+  sampleRows: Array<Record<string, string>>;
+}
+
 const $ = <T extends HTMLElement>(selector: string): T => {
   const element = document.querySelector<T>(selector);
   if (!element) throw new Error(`Missing element ${selector}`);
@@ -39,6 +45,7 @@ async function init(): Promise<void> {
   $("#drugList").innerHTML = state.config.antibiotics.map((drug) => `<li>${drug.name}<span>${drug.target}</span></li>`).join("");
 
   bindEvents();
+  await renderBvbrcTrainingData();
   await renderMetrics();
 }
 
@@ -166,8 +173,49 @@ async function renderMetrics(): Promise<void> {
   $("#reliabilityPolyline").setAttribute("points", polyline);
 }
 
+async function renderBvbrcTrainingData(): Promise<void> {
+  try {
+    const payload = await fetchJson<BvbrcTrainingDashboard>("/api/bvbrc/training-dashboard");
+    $("#bvRows").textContent = formatNumber(payload.manifest.amr_rows);
+    $("#bvGenomes").textContent = formatNumber(payload.manifest.unique_genomes);
+    $("#bvTaxon").textContent = String(payload.manifest.taxon_id ?? "--");
+    $("#bvEvidence").textContent = String(payload.manifest.evidence_filter ?? "--");
+    $("#bvGenerated").textContent = `Generated ${String(payload.manifest.generated_at ?? "")}`;
+
+    $("#bvSummaryTable").innerHTML = payload.summary.map((row) => `
+      <tr>
+        <td>${row.antibiotic}</td>
+        <td>${row.resistant}</td>
+        <td>${row.susceptible}</td>
+        <td>${row.total}</td>
+        <td>${row.unique_genomes}</td>
+      </tr>
+    `).join("");
+
+    $("#bvSampleTable").innerHTML = payload.sampleRows.map((row) => `
+      <tr>
+        <td>${row.genome_id}<br><small>${row.genome_name}</small></td>
+        <td>${row.antibiotic}</td>
+        <td><span class="badge ${row.label === "resistant" ? "danger" : "success"}">${row.label}</span></td>
+        <td>${row.genome_quality || "NA"}</td>
+        <td>${row.genetic_group || row.genome_id}</td>
+        <td>${row.laboratory_typing_method || "NA"}</td>
+      </tr>
+    `).join("");
+  } catch (error) {
+    $("#bvGenerated").textContent = error instanceof Error ? error.message : "BV-BRC training data unavailable.";
+    $("#bvSummaryTable").innerHTML = "";
+    $("#bvSampleTable").innerHTML = "";
+  }
+}
+
 function formatMetric(value: unknown): string {
   return typeof value === "number" ? value.toFixed(2) : String(value);
+}
+
+function formatNumber(value: unknown): string {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toLocaleString() : String(value ?? "--");
 }
 
 function toCsv(result: AnalysisResult): string {

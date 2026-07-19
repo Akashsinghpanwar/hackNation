@@ -24,7 +24,7 @@
             <span>AMRShield Sentinel - Genome Firewall</span>
           </div>
           <div class="window-controls" aria-hidden="true">
-            <span>_</span><span>□</span><span>×</span>
+            <span>_</span><span>[]</span><span>x</span>
           </div>
         </div>
         <section class="hero-grid active" data-panel="upload">
@@ -132,6 +132,49 @@ TETA ---- BLATEM-1 ----
         </section>
 
         <section class="workbench" data-panel="trust">
+          <div class="stat-grid training-stats">
+            <div><span>BV-BRC Rows</span><strong id="bvRows">--</strong></div>
+            <div><span>Unique Genomes</span><strong id="bvGenomes">--</strong></div>
+            <div><span>Taxon</span><strong id="bvTaxon">--</strong></div>
+            <div><span>Evidence</span><strong id="bvEvidence">--</strong></div>
+          </div>
+          <div class="panel table-panel">
+            <div class="panel-header">
+              <h2>BV-BRC Training Labels</h2>
+              <span id="bvGenerated">Waiting for local dataset</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Antibiotic</th>
+                  <th>Resistant</th>
+                  <th>Susceptible</th>
+                  <th>Total</th>
+                  <th>Unique Genomes</th>
+                </tr>
+              </thead>
+              <tbody id="bvSummaryTable"></tbody>
+            </table>
+          </div>
+          <div class="panel table-panel">
+            <div class="panel-header">
+              <h2>Training Row Sample</h2>
+              <span>Joined AMR labels + genome metadata</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Genome</th>
+                  <th>Drug</th>
+                  <th>Label</th>
+                  <th>Quality</th>
+                  <th>Group</th>
+                  <th>Method</th>
+                </tr>
+              </thead>
+              <tbody id="bvSampleTable"></tbody>
+            </table>
+          </div>
           <div class="panel">
             <div class="panel-header">
               <h2>Trust Dashboard</h2>
